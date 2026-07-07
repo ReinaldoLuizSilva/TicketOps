@@ -14,7 +14,7 @@ CREATE TABLE ticketops.chamados (
     id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     cliente_id NUMBER NOT NULL REFERENCES ticketops.clientes(id),
     titulo VARCHAR2(200) NOT NULL,
-    descricao BLOB,
+    descricao CLOB,
     prioridade CHAR(1) DEFAULT 'M' NOT NULL
         CONSTRAINT ck_chamados_prioridade CHECK (prioridade IN ('B', 'M', 'A', 'C')),
     status CHAR(1) DEFAULT 'A' NOT NULL

@@ -4,7 +4,6 @@ from app.schemas import ClienteCreate, ClienteUpdate
 
 router = APIRouter()
 
-
 @router.get("/", status_code=200)
 def clienteslist (conn=Depends(get_conn)):
     with conn.cursor() as cur:
@@ -24,7 +23,7 @@ def clientesAdd (cliente: ClienteCreate, conn=Depends(get_conn)):
 @router.delete("/deletecliente/{cliente_id}", status_code=204)
 def clientesDel (cliente_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM clientes WHERE id = :id", {"id": cliente_id},)
+        cur.execute("DELETE FROM clientes WHERE id = :id", {"id": cliente_id})
         conn.commit()
         return
     
