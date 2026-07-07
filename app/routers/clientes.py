@@ -1,8 +1,7 @@
-from fastapi import APIRouter, FastAPI, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.db import get_conn
 from app.schemas import ClienteCreate, ClienteUpdate
 
-app = FastAPI()
 router = APIRouter()
 
 
@@ -30,8 +29,16 @@ def clientesDel (cliente_id: int, conn=Depends(get_conn)):
         return
     
 @router.put("/updatecliente/{cliente_id}", status_code=204)
-def clientesUpt (cliente_id: int, cliente: ClienteUpdate, conn=Depends(get_conn)):
+def clientesUpt(cliente_id: int, cliente: ClienteUpdate, conn=Depends(get_conn)):
+    campos = cliente.model_dump(exclude_unset=True)
+    if not campos:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+
+    set_sql = ", ".join(f"{c} = :{c}" for c in campos)
+    campos["id"] = cliente_id
     with conn.cursor() as cur:
-        cur.execute("UPDATE clientes SET nome = :nome, email = :email WHERE id = :id", {"nome": cliente.nome, "email": cliente.email, "id": cliente_id})
+        cur.execute(f"UPDATE clientes SET {set_sql} WHERE id = :id", campos)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
         conn.commit()
-        return
+    return
