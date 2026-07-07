@@ -1,6 +1,6 @@
 from fastapi import APIRouter, FastAPI, Depends, HTTPException
 from app.db import get_conn
-from app.schemas import ClienteCreate
+from app.schemas import ClienteCreate, ClienteUpdate
 
 app = FastAPI()
 router = APIRouter()
@@ -21,3 +21,17 @@ def clientesAdd (cliente: ClienteCreate, conn=Depends(get_conn)):
         cur.execute("INSERT INTO clientes (nome, email) VALUES (:nome, :email) RETURNING id INTO :new_id", {"nome": cliente.nome, "email": cliente.email, "new_id": new_id},)
         conn.commit()
         return{"ID": new_id.getvalue()[0], "NOME": cliente.nome, "EMAIL": cliente.email}
+    
+@router.delete("/deletecliente/{cliente_id}", status_code=204)
+def clientesDel (cliente_id: int, conn=Depends(get_conn)):
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM clientes WHERE id = :id", {"id": cliente_id},)
+        conn.commit()
+        return
+    
+@router.put("/updatecliente/{cliente_id}", status_code=204)
+def clientesUpt (cliente_id: int, cliente: ClienteUpdate, conn=Depends(get_conn)):
+    with conn.cursor() as cur:
+        cur.execute("UPDATE clientes SET nome = :nome, email = :email WHERE id = :id", {"nome": cliente.nome, "email": cliente.email, "id": cliente_id})
+        conn.commit()
+        return
