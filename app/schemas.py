@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 
 class ClienteCreate(BaseModel):
     nome: str
@@ -11,9 +12,9 @@ class ClienteUpdate(BaseModel):
 class ChamadosCreate(BaseModel):
     cliente_id: int
     titulo: str
-    descricao: str
-    prioridade: str
-    status: str
+    descricao: str | None = None
+    # B = Baixo, M = Media, A = Alta, C = Critica
+    prioridade: Literal["B", "M", "A", "C"] = "M"
     data_resolvido: str | None = None
 
 class ChamadoUpdate(BaseModel):

@@ -12,7 +12,7 @@ def clienteslist (conn=Depends(get_conn)):
             {"ID" : id, "NOME" : nome, "EMAIL" : email } for id, nome, email in cur.fetchall()
         ]
 
-@router.post("/addcliente", status_code=201)
+@router.post("/", status_code=201)
 def clientesAdd (cliente: ClienteCreate, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         new_id = cur.var(int)
@@ -20,14 +20,14 @@ def clientesAdd (cliente: ClienteCreate, conn=Depends(get_conn)):
         conn.commit()
         return{"ID": new_id.getvalue()[0], "NOME": cliente.nome, "EMAIL": cliente.email}
     
-@router.delete("/deletecliente/{cliente_id}", status_code=204)
+@router.delete("/{cliente_id}", status_code=204)
 def clientesDel (cliente_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         cur.execute("DELETE FROM clientes WHERE id = :id", {"id": cliente_id})
         conn.commit()
         return
     
-@router.put("/updatecliente/{cliente_id}", status_code=204)
+@router.put("/{cliente_id}", status_code=204)
 def clientesUpt(cliente_id: int, cliente: ClienteUpdate, conn=Depends(get_conn)):
     campos = cliente.model_dump(exclude_unset=True)
     if not campos:

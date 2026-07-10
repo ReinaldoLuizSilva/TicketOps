@@ -36,34 +36,33 @@ def chamadoslist (conn=Depends(get_conn)):
                 } for id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido in cur.fetchall()
             ]
 
-@router.post("/addchamados", status_code=201)
+@router.post("/", status_code=201)
 def chamadosAdd (chamado: ChamadosCreate, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         new_id = cur.var(int)
         cur.execute(
-            "INSERT INTO chamados (cliente_id, titulo, descricao, prioridade, status) "
-            "VALUES (:cliente_id, :titulo, :descricao, :prioridade, :status) "
+            "INSERT INTO chamados (cliente_id, titulo, descricao, prioridade) "
+            "VALUES (:cliente_id, :titulo, :descricao, :prioridade) "
             "RETURNING id INTO :new_id",
             {
                 "cliente_id": chamado.cliente_id,
                 "titulo": chamado.titulo,
                 "descricao": chamado.descricao,
                 "prioridade": chamado.prioridade,
-                "status": chamado.status,
                 "new_id": new_id,
             },
         )
         conn.commit()
-        return{"ID": new_id.getvalue()[0], "CLIENTE": chamado.cliente_id, "TITULO": chamado.titulo, "DESCRICAO": chamado.descricao, "PRIORIDADE": chamado.prioridade, "STATUS": chamado.status}
+        return{"ID": new_id.getvalue()[0], "CLIENTE": chamado.cliente_id, "TITULO": chamado.titulo, "DESCRICAO": chamado.descricao, "PRIORIDADE": chamado.prioridade}
         
-@router.delete("/deletechamados/{chamado_id}", status_code=204)
+@router.delete("/{chamado_id}", status_code=204)
 def chamadosDel (chamado_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         cur.execute("DELETE FROM chamados WHERE id = :id", {"id": chamado_id})
         conn.commit()
         return
     
-@router.put("/updatechamado/{chamado_id}", status_code=204)
+@router.put("/{chamado_id}", status_code=204)
 def chamadoUpt(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
     campos = chamado.model_dump(exclude_unset=True)
     if not campos:
