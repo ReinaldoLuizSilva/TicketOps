@@ -1,9 +1,11 @@
 ALTER SESSION SET CONTAINER = FREEPDB1;
 
 CREATE TABLE ticketops.clientes (
-    id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id NUMBER GENERATED ALWAYS AS IDENTITY
+        CONSTRAINT pk_clientes PRIMARY KEY,
     nome VARCHAR2(120) NOT NULL,
-    email VARCHAR2(120) NOT NULL UNIQUE,
+    email VARCHAR2(120) NOT NULL
+        CONSTRAINT uk_clientes_email UNIQUE,
     created TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
     createdby VARCHAR2(120) DEFAULT SYS_CONTEXT('USERENV', 'SESSION_USER') NOT NULL,
     updated TIMESTAMP,
@@ -11,8 +13,10 @@ CREATE TABLE ticketops.clientes (
 );
 
 CREATE TABLE ticketops.chamados (
-    id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    cliente_id NUMBER NOT NULL REFERENCES ticketops.clientes(id),
+    id NUMBER GENERATED ALWAYS AS IDENTITY
+        CONSTRAINT pk_chamados PRIMARY KEY,
+    cliente_id NUMBER NOT NULL
+        CONSTRAINT fk_chamados_cliente REFERENCES ticketops.clientes(id),
     titulo VARCHAR2(200) NOT NULL,
     descricao CLOB,
     prioridade CHAR(1) DEFAULT 'M' NOT NULL
@@ -27,8 +31,10 @@ CREATE TABLE ticketops.chamados (
 );
 
 CREATE TABLE ticketops.comentarios (
-    id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    chamado_id NUMBER NOT NULL REFERENCES ticketops.chamados(id),
+    id NUMBER GENERATED ALWAYS AS IDENTITY
+        CONSTRAINT pk_comentarios PRIMARY KEY,
+    chamado_id NUMBER NOT NULL
+        CONSTRAINT fk_comentarios_chamado REFERENCES ticketops.chamados(id),
     autor VARCHAR2(120) NOT NULL,
     texto CLOB NOT NULL,
     created TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
@@ -40,3 +46,30 @@ CREATE TABLE ticketops.comentarios (
 CREATE INDEX ticketops.idx_chamados_status ON ticketops.chamados(status);
 CREATE INDEX ticketops.idx_chamados_cliente ON ticketops.chamados(cliente_id);
 CREATE INDEX ticketops.idx_comentarios_chamado ON ticketops.comentarios(chamado_id);
+
+CREATE OR REPLACE TRIGGER ticketops.trg_clientes_update 
+    BEFORE UPDATE ON ticketops.clientes
+    FOR EACH ROW
+BEGIN
+    :NEW.updated := SYSTIMESTAMP;
+    :NEW.updatedby := SYS_CONTEXT('USERENV', 'SESSION_USER');
+END;
+/
+
+CREATE OR REPLACE TRIGGER ticketops.trg_chamados_update 
+    BEFORE UPDATE ON ticketops.chamados
+    FOR EACH ROW
+BEGIN
+    :NEW.updated := SYSTIMESTAMP;
+    :NEW.updatedby := SYS_CONTEXT('USERENV', 'SESSION_USER');
+END;
+/
+
+CREATE OR REPLACE TRIGGER ticketops.trg_comentarios_update 
+    BEFORE UPDATE ON ticketops.comentarios
+    FOR EACH ROW
+BEGIN
+    :NEW.updated := SYSTIMESTAMP;
+    :NEW.updatedby := SYS_CONTEXT('USERENV', 'SESSION_USER');
+END;
+/
