@@ -76,3 +76,39 @@ def chamadoUpt(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
             raise HTTPException(status_code=404, detail="Chamado não encontrado")
         conn.commit()
     return
+
+@router.get("/{chamado_id}", status_code=200)
+def chamadoGet(chamado_id: int, conn=Depends(get_conn)):
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT
+                a.id,
+                a.cliente_id,
+                b.nome,
+                a.titulo,
+                a.descricao,
+                a.prioridade,
+                a.status,
+                a.data_resolvido
+            FROM
+                chamados a
+            JOIN
+                clientes b ON b.id = a.cliente_id
+            WHERE
+                a.id = :id""",
+            {"id": chamado_id},
+        )
+        result = cur.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Chamado não encontrado")
+        id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = result
+        return {
+            "ID": id,
+            "CLIENTE_ID": cliente_id,
+            "CLIENTE_NOME": cliente_nome,
+            "TITULO": titulo,
+            "DESCRICAO": descricao.read() if descricao else None,
+            "PRIORIDADE": prioridade,
+            "STATUS": status,
+            "DATA RESOLVIDO": data_resolvido
+        }
