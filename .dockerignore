@@ -1,8 +1,17 @@
-.venv/
-.git/
+#secret
 .env
+
+#python
 __pycache__/
+*.pyc
 .pytest_cache/
+
+#virtual environment
+.venv/
+
+#git
+.git/
+
 tests/
 terraform/
 .github/
