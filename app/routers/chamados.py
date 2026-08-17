@@ -1,9 +1,8 @@
 from typing import Literal
-
+import oracledb
 from fastapi import APIRouter, Depends, HTTPException, Query
-
 from app.db import get_conn
-from app.schemas import ChamadosCreate, ChamadoUpdate
+from app.schemas import ChamadosCreate, ChamadoUpdate, ComentarioCreate
 
 router = APIRouter()
 
@@ -123,3 +122,34 @@ def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
         if not row:
             raise HTTPException(status_code=404, detail="Chamado não encontrado")
         return _row_to_dict(row)
+
+@router.post("/{chamado_id}/comentarios", status_code=201)
+def criar_comentario(chamado_id: int, comentario: ComentarioCreate, conn=Depends(get_conn)):
+    with conn.cursor() as cur:
+        new_id = cur.var(int)
+        new_created = cur.var(oracledb.DB_TYPE_TIMESTAMP)
+        try:
+            cur.execute(
+                "INSERT INTO comentarios (chamado_id, autor, texto) "
+                "VALUES (:chamado_id, :autor, :texto) "
+                "RETURNING id, created INTO :new_id, :new_created",
+                {
+                    "chamado_id": chamado_id,
+                    "autor": comentario.autor,
+                    "texto": comentario.texto,
+                    "new_id": new_id,
+                    "new_created": new_created,
+                },
+            )
+        except oracledb.IntegrityError as exc:
+            if getattr(exc.args[0], "full_code", None) == "ORA-02291":
+                raise HTTPException(status_code=404, detail="Chamado não encontrado") from exc
+            raise
+        conn.commit()
+        return{
+            "ID": new_id.getvalue()[0],
+            "CHAMADO_ID": chamado_id,
+            "AUTOR": comentario.autor,
+            "TEXTO": comentario.texto,
+            "CRIADO_EM": new_created.getvalue()[0],
+        }
