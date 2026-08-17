@@ -30,3 +30,7 @@ class ChamadoUpdate(BaseModel):
     # A = Aberto, E = Em andamento, R = Resolvido, C = Cancelado
     # data_resolvido é derivado do status pelo router, não é informado pelo cliente
     status: Literal["A", "E", "R", "C"] | None = None
+
+class ComentarioCreate(BaseModel):
+    autor: str = Field(min_length=1, max_length=120)
+    texto: str = Field(min_length=1)
