@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import get_conn
 from app.schemas import ChamadosCreate, ChamadoUpdate
@@ -9,12 +11,7 @@ router = APIRouter()
 # campos gera sempre o mesmo texto SQL, e o Oracle reaproveita o cursor.
 # data_resolvido fica fora de propósito — é derivada do status, no próprio endpoint.
 _COLUNAS_CHAMADO = ("cliente_id", "titulo", "descricao", "prioridade", "status")
-
-
-@router.get("", status_code=200)
-def listar_chamados(conn=Depends(get_conn)):
-    with conn.cursor() as cur:
-        cur.execute("""SELECT
+_SELECT_CHAMADO = """SELECT
                         a.id,
                         a.cliente_id,
                         b.nome,
@@ -26,23 +23,38 @@ def listar_chamados(conn=Depends(get_conn)):
                     FROM
                         chamados a
                     JOIN
-                        clientes b ON b.id = a.cliente_id
-                    ORDER BY
-                        a.id""")
-        return [
-            {
-                "ID": id,
-                "CLIENTE_ID": cliente_id,
-                "CLIENTE_NOME": cliente_nome,
-                "TITULO": titulo,
-                "DESCRICAO": descricao.read() if descricao else None,
-                "PRIORIDADE": prioridade,
-                "STATUS": status,
-                "DATA RESOLVIDO": data_resolvido,
-            }
-            for id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido in cur.fetchall()
-        ]
+                        clientes b ON b.id = a.cliente_id"""
 
+def _row_to_dict(row) -> dict:
+    id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = row
+    return{
+        "ID": id,
+        "CLIENTE_ID": cliente_id,
+        "CLIENTE_NOME": cliente_nome,
+        "TITULO": titulo,
+        "DESCRICAO": descricao.read() if descricao else None,
+        "PRIORIDADE": prioridade,
+        "STATUS": status,
+        "DATA_RESOLVIDO": data_resolvido,
+    }
+
+@router.get("", status_code=200)
+def listar_chamados(
+    status: Literal["A", "E", "R", "C"] | None = Query(
+        default= None,
+        description="Filtra por status: A = Aberto, E = Em andamento, R = Resolvido, C = Calcelado"
+    ),
+    conn = Depends(get_conn),
+):
+    sql = _SELECT_CHAMADO
+    params = {}
+    if status:
+        sql += " WHERE a.status = :status"
+        params["status"] = status
+    sql += " ORDER BY a.id"
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return[_row_to_dict(row) for row in cur.fetchall()]
 
 @router.post("", status_code=201)
 def criar_chamado(chamado: ChamadosCreate, conn=Depends(get_conn)):
@@ -103,38 +115,10 @@ def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_
     return
 
 
-@router.get("/{chamado_id}", status_code=200)
 def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
-        cur.execute(
-            """SELECT
-                a.id,
-                a.cliente_id,
-                b.nome,
-                a.titulo,
-                a.descricao,
-                a.prioridade,
-                a.status,
-                a.data_resolvido
-            FROM
-                chamados a
-            JOIN
-                clientes b ON b.id = a.cliente_id
-            WHERE
-                a.id = :id""",
-            {"id": chamado_id},
-        )
-        result = cur.fetchone()
-        if not result:
+        cur.execute( _SELECT_CHAMADO + " WHERE a.id = :id", {"id": chamado_id})
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Chamado não encontrado")
-        id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = result
-        return {
-            "ID": id,
-            "CLIENTE_ID": cliente_id,
-            "CLIENTE_NOME": cliente_nome,
-            "TITULO": titulo,
-            "DESCRICAO": descricao.read() if descricao else None,
-            "PRIORIDADE": prioridade,
-            "STATUS": status,
-            "DATA RESOLVIDO": data_resolvido,
-        }
+        return _row_to_dict(row)
