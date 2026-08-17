@@ -39,7 +39,7 @@ def _row_to_dict(row) -> dict:
     }
 
 @router.get("", status_code=200)
-def listar_chamados(
+def c(
     status: Literal["A", "E", "R", "C"] | None = Query(
         default= None,
         description="Filtra por status: A = Aberto, E = Em andamento, R = Resolvido, C = Calcelado"
@@ -115,9 +115,10 @@ def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_
     return
 
 
+@router.get("/{chamado_id}", status_code=200)
 def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
-        cur.execute( _SELECT_CHAMADO + " WHERE a.id = :id", {"id": chamado_id})
+        cur.execute(_SELECT_CHAMADO + " WHERE a.id = :id", {"id": chamado_id})
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Chamado não encontrado")
