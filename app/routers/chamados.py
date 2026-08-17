@@ -24,6 +24,18 @@ _SELECT_CHAMADO = """SELECT
                     JOIN
                         clientes b ON b.id = a.cliente_id"""
 
+_SELECT_COMENTARIOS = """SELECT
+                            id,
+                            autor,
+                            texto,
+                            created
+                        FROM
+                            comentarios
+                        WHERE
+                            chamado_id = :chamado_id
+                        ORDER BY
+                            id"""
+
 def _row_to_dict(row) -> dict:
     id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = row
     return{
@@ -121,7 +133,19 @@ def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Chamado não encontrado")
-        return _row_to_dict(row)
+        chamado = _row_to_dict(row)
+
+        cur.execute(_SELECT_COMENTARIOS, {"chamado_id": chamado_id})
+        chamado["COMENTARIOS"] = [
+            {
+                "ID": id,
+                "AUTOR": autor,
+                "TEXTO": texto.read() if texto else None,
+                "CRIADO_EM": created,
+            }
+            for id, autor, texto, created in cur.fetchall()
+        ]
+        return chamado
 
 @router.post("/{chamado_id}/comentarios", status_code=201)
 def criar_comentario(chamado_id: int, comentario: ComentarioCreate, conn=Depends(get_conn)):
