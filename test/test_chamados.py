@@ -241,14 +241,19 @@ def test_atualizar_chamado_para_resolvido_preenche_data(api, db, chamado):
     assert api.get(f"/chamados/{chamado['ID']}").json()["DATA_RESOLVIDO"] is not None
 
 def test_atualizar_chamado_saindo_de_resolvido_limpa_data(api, chamado):
-    api.put(f"/chamados/{chamado['ID']}", json={"status": "R"})
-    api.put(f"/chamados/{chamado['ID']}", json={"status": "E"})
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    assert response.status_code == 204, response.text
+
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "E"})
+    assert response.status_code == 204, response.text
     assert api.get(f"/chamados/{chamado['ID']}").json()["DATA_RESOLVIDO"] is None
 
 def test_resolver_duas_vezes_mantem_a_data_original(api, chamado):
-    api.put(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    assert response.status_code == 204, response.text
     primeira = api.get(f"/chamados/{chamado['ID']}").json()["DATA_RESOLVIDO"]
-    api.put(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    assert response.status_code == 204, response.text
     assert api.get(f"/chamados/{chamado['ID']}").json()["DATA_RESOLVIDO"] == primeira
 
 def test_listar_chamados_filtra_por_status(api, chamado):
