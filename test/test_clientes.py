@@ -1,4 +1,5 @@
-from conftest import novo_email, apagar_cliente
+from conftest import apagar_cliente, novo_email
+
 
 def test_criar_cliente(api, db):
     response = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
@@ -102,37 +103,37 @@ def test_listar_clientes_por_id(api, db, cliente):
     finally:
         apagar_cliente(db, outro.json()["ID"])
 
-def test_atualizar_cliente_nome(api, db, cliente):
-    cliente = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert cliente.status_code == 201, cliente.text
+def test_atualizar_cliente_nome(api, cliente):
     novo_nome = "Cliente Atualizado"
-    response = api.put(f"/clientes/{cliente.json()['ID']}", json={"nome": novo_nome})
+    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": novo_nome})
     assert response.status_code == 204, response.text
-    apagar_cliente(db, cliente.json()["ID"])
 
-def test_atualizar_cliente_email(api, db, cliente):
-    cliente = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert cliente.status_code == 201, cliente.text
+    atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
+    assert atualizado["NOME"] == novo_nome
+    assert atualizado["EMAIL"] == cliente["EMAIL"]
+
+def test_atualizar_cliente_email(api, cliente):
     email = novo_email()
-    response = api.put(f"/clientes/{cliente.json()['ID']}", json={"email": email})
+    response = api.put(f"/clientes/{cliente['ID']}", json={"email": email})
     assert response.status_code == 204, response.text
-    apagar_cliente(db, cliente.json()["ID"])
 
-def test_atualizar_cliente_completo(api, db, cliente):
-    cliente = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert cliente.status_code == 201, cliente.text
+    atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
+    assert atualizado["NOME"] == cliente["NOME"]
+    assert atualizado["EMAIL"] == email
+
+def test_atualizar_cliente_completo(api, cliente):
     novo_nome = "Cliente Atualizado"
     email = novo_email()
-    response = api.put(f"/clientes/{cliente.json()['ID']}", json={"nome": novo_nome, "email": email})
+    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": novo_nome, "email": email})
     assert response.status_code == 204, response.text
-    apagar_cliente(db, cliente.json()["ID"])
 
-def test_atualizar_cliente_nada(api, db, cliente):
-    cliente = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert cliente.status_code == 201, cliente.text
-    response = api.put(f"/clientes/{cliente.json()['ID']}", json={})
+    atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
+    assert atualizado == {"ID": cliente["ID"], "NOME": novo_nome, "EMAIL": email}
+
+def test_atualizar_cliente_nada(api, cliente):
+    response = api.put(f"/clientes/{cliente['ID']}", json={})
     assert response.status_code == 400, response.text
-    apagar_cliente(db, cliente.json()["ID"])
+    assert response.json() == {"detail": "Nada para atualizar"}
 
 def test_atualizar_cliente_inexistente(api):
     response = api.put("/clientes/999999", json={"nome": "Cliente Atualizado"})
@@ -149,70 +150,63 @@ def test_atualizar_cliente_email_duplicado(api, db, cliente):
         apagar_cliente(db, outro.json()["ID"])
 
 def test_atualizar_cliente_valida_updated_updatedby(api, db):
-    email = novo_email()
-    response = api.post("/clientes", json={"nome": "Cliente Teste", "email": email})
+    response = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
     assert response.status_code == 201, response.text
     dados = response.json()
 
-    novo_nome = "Cliente Atualizado"
-    response = api.put(f"/clientes/{dados['ID']}", json={"nome": novo_nome})
+    with db.cursor() as cursor:
+        cursor.execute("SELECT updated, updatedby FROM clientes WHERE id = :id", id=dados["ID"])
+        assert cursor.fetchone() == (None, None)
+
+    response = api.put(f"/clientes/{dados['ID']}", json={"nome": "Cliente Atualizado"})
     assert response.status_code == 204, response.text
 
     with db.cursor() as cursor:
         cursor.execute("SELECT updated, updatedby FROM clientes WHERE id = :id", id=dados["ID"])
-        row = cursor.fetchone()
-        assert row is not None
-        updated = row[0]
+        updated, updatedby = cursor.fetchone()
         assert updated is not None
-        updatedby = row[1]
         assert updatedby is not None
 
     apagar_cliente(db, dados["ID"])
 
-def test_atualizar_cliente_nome_nulo(api, db, cliente):
-    cliente = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert cliente.status_code == 201, cliente.text
-    response = api.put(f"/clientes/{cliente.json()['ID']}", json={"nome": None})
+def test_atualizar_cliente_nome_nulo(api, cliente):
+    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": None})
     assert response.status_code == 500, response.text
-    apagar_cliente(db, cliente.json()["ID"])
+
+def test_atualizar_cliente_nome_vazio(api, cliente):
+    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": ""})
+    assert response.status_code == 422, response.text
+    assert response.json() == {
+        "detail": [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "nome"],
+                "msg": "String should have at least 1 character",
+                "input": '',
+                "ctx": {"min_length": 1},
+            }
+        ]
+    }
 
 def test_excluir_cliente(api, db, cliente):
-    response = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert response.status_code == 201, response.text
-    cliente = response.json()
     response = api.delete(f"/clientes/{cliente['ID']}")
     assert response.status_code == 204, response.text
 
     with db.cursor() as cursor:
-        cursor.execute("SELECT * FROM clientes WHERE id = :id", id=cliente["ID"])
-        row = cursor.fetchone()
-        assert row is None
+        cursor.execute("SELECT 1 FROM clientes WHERE id = :id", id=cliente["ID"])
+        assert cursor.fetchone() is None
 
 def test_excluir_cliente_inexistente(api):
     response = api.delete("/clientes/999999")
     assert response.status_code == 404, response.text
 
-def test_excluir_cliente_com_chamados(api, db, cliente):
-    response = api.post(
-        "/chamados",
-        json={
-            "cliente_id": cliente["ID"],
-            "titulo": "Chamado Teste",
-            "descricao": "Descrição do chamado teste",
-            "prioridade": 'A',
-        },
-    )
-    assert response.status_code == 201, response.text
-    chamado = response.json()
-
+def test_excluir_cliente_com_chamados(api, cliente, chamado):
     response = api.delete(f"/clientes/{cliente['ID']}")
     assert response.status_code == 409, response.text
-    
+    assert response.json() == {"detail": "Registro possui dependentes e não pode ser excluído"}
+
 
 def test_excluir_cliente_duas_vezes(api, cliente):
-    response = api.post("/clientes", json={"nome": "Cliente Teste", "email": novo_email()})
-    assert response.status_code == 201, response.text
-    cliente = response.json()
     response = api.delete(f"/clientes/{cliente['ID']}")
     assert response.status_code == 204, response.text
 
