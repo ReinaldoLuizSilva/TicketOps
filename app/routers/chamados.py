@@ -103,7 +103,7 @@ def excluir_chamado(chamado_id: int, conn=Depends(get_conn)):
         return
 
 
-@router.patch("/{chamado_id}", status_code=204)
+@router.put("/{chamado_id}", status_code=204)
 def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
     campos = chamado.model_dump(exclude_unset=True)
     if not campos:
