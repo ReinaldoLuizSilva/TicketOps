@@ -211,11 +211,8 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 ## Roadmap
 
 - [x] **M0** — API `/health` rodando local em Docker, com teste
-- [ ] **M1** — CRUD de chamados conectado ao Oracle, local via docker-compose
+- [x] **M1** — CRUD de chamados conectado ao Oracle, local via docker-compose
 - [ ] **M2** — Terraform provisionando o GCP (Cloud Run, Artifact Registry, Secret Manager)
 - [ ] **M3** — Pipeline CI/CD com Workload Identity Federation
 - [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
-
-Pendência do M1: cobertura de testes do CRUD. O endpoint `GET /dashboard` (contagens por
-status e prioridade, tempo médio de resolução) está previsto e ainda não foi implementado.
