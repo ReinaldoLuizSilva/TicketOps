@@ -1,4 +1,3 @@
-from conftest import apagar_cliente, novo_email
 
 
 def test_criar_chamado(api, db, cliente):
@@ -11,7 +10,7 @@ def test_criar_chamado(api, db, cliente):
     assert response.status_code == 201, response.text
     assert response.json() == {
         "ID": response.json()["ID"],
-        "CLIENTE": cliente["ID"],      
+        "CLIENTE": cliente["ID"],
         "TITULO": "Chamado Teste",
         "DESCRICAO": "Descrição do chamado teste",
         "PRIORIDADE": "A",
@@ -149,7 +148,7 @@ def test_listar_chamados_por_id(api, chamado):
     response = api.get(f"/chamados/{chamado['ID']}")
     assert response.status_code == 200, response.text
     dados = response.json()
-    assert dados["ID"] == chamado["ID"] 
+    assert dados["ID"] == chamado["ID"]
 
 def test_obter_chamado_traz_cliente_descricao_e_comentarios(api, cliente, chamado):
     dados = api.get(f"/chamados/{chamado['ID']}").json()
@@ -159,7 +158,7 @@ def test_obter_chamado_traz_cliente_descricao_e_comentarios(api, cliente, chamad
     assert dados["COMENTARIOS"] == []
 
 def test_atualizar_chamado(api, chamado):
-    response = api.put(
+    response = api.patch(
         f"/chamados/{chamado['ID']}",
         json={
             "titulo": "Chamado Atualizado",
@@ -170,7 +169,7 @@ def test_atualizar_chamado(api, chamado):
     assert response.status_code == 204, response.text
 
 def test_atualizar_chamado_inexistente(api):
-    response = api.put(
+    response = api.patch(
         "/chamados/999999",
         json={
             "titulo": "Chamado Atualizado",
@@ -181,12 +180,12 @@ def test_atualizar_chamado_inexistente(api):
     assert response.status_code == 404, response.text
 
 def test_atualizar_chamado_nada(api, chamado):
-    response = api.put(f"/chamados/{chamado['ID']}", json={})
+    response = api.patch(f"/chamados/{chamado['ID']}", json={})
     assert response.status_code == 400, response.text
     assert response.json() == {"detail": "Nada para atualizar"}
 
 def test_atualizar_chamado_updated_updatedby(api, chamado, db):
-    response = api.put(
+    response = api.patch(
         f"/chamados/{chamado['ID']}",
         json={
             "titulo": "Chamado Atualizado",
@@ -204,7 +203,7 @@ def test_atualizar_chamado_updated_updatedby(api, chamado, db):
 
 
 def test_atualizar_chamado_nulo(api, chamado):
-    response = api.put(
+    response = api.patch(
         f"/chamados/{chamado['ID']}",
         json={
             "titulo": None,
@@ -215,7 +214,7 @@ def test_atualizar_chamado_nulo(api, chamado):
     assert response.status_code == 500, response.text
 
 def test_atualizar_chamado_titulo_vazio(api, chamado):
-    response = api.put(
+    response = api.patch(
         f"/chamados/{chamado['ID']}",
         json={
             "titulo": "",
@@ -237,7 +236,7 @@ def test_atualizar_chamado_titulo_vazio(api, chamado):
     }
 
 def test_atualizar_chamado_para_resolvido_preenche_data(api, db, chamado):
-    response = api.put(f"/chamados/{chamado['ID']}", json={"status": "R"})
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "R"})
     assert response.status_code == 204, response.text
     assert api.get(f"/chamados/{chamado['ID']}").json()["DATA_RESOLVIDO"] is not None
 
