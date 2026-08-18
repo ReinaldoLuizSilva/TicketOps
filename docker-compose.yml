@@ -17,7 +17,7 @@ services:
       APP_USER: ticketops
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
     ports:
-      - "1521:1521"
+      - "1522:1521"
     volumes:
       - oracle-data:/opt/oracle/oradata
       - ./database:/container-entrypoint-initdb.d
