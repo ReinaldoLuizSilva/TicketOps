@@ -8,7 +8,7 @@ from app.schemas import ChamadosCreate, ChamadoUpdate, ComentarioCreate
 
 router = APIRouter()
 
-# Colunas que o cliente pode escrever via PUT, em ordem fixa: o mesmo conjunto de
+# Colunas que o cliente pode escrever via PATCH, em ordem fixa: o mesmo conjunto de
 # campos gera sempre o mesmo texto SQL, e o Oracle reaproveita o cursor.
 # data_resolvido fica fora de propósito — é derivada do status, no próprio endpoint.
 _COLUNAS_CHAMADO = ("cliente_id", "titulo", "descricao", "prioridade", "status")
@@ -52,7 +52,7 @@ def _row_to_dict(row) -> dict:
     }
 
 @router.get("", status_code=200)
-def c(
+def listar_chamados(
     status: Literal["A", "E", "R", "C"] | None = Query(
         default= None,
         description="Filtra por status: A = Aberto, E = Em andamento, R = Resolvido, C = Calcelado"
