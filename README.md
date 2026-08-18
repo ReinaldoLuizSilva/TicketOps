@@ -57,7 +57,7 @@ Com tudo no ar:
 
 - Swagger UI: <http://localhost:8080/docs>
 - Health check: <http://localhost:8080/health>
-- Banco: `localhost:1521/FREEPDB1`
+- Banco: `localhost:1522/FREEPDB1`
 
 ### Variáveis de ambiente
 
@@ -78,7 +78,7 @@ conectar com ele. Se divergirem, o banco sobe normalmente e a API falha na inici
 do pool com `ORA-01017: invalid credential`.
 
 O `DB_DSN` usa `db` como host porque esse é o nome do serviço no `docker-compose.yml`. Para
-conectar de fora dos containers (SQL Developer, sqlplus), use `localhost:1521/FREEPDB1`.
+conectar de fora dos containers (SQL Developer, sqlplus), use `localhost:1522/FREEPDB1`.
 
 Três variáveis opcionais existem para a conexão com o Autonomous Database e ficam vazias no
 ambiente local: `DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD`.
@@ -184,7 +184,7 @@ mantém o schema antigo:
 docker compose down -v && docker compose up -d --build
 ```
 
-O `-v` apaga o volume `oracle-data`, e com ele todos os dados.
+CUIDADO: `-v` apaga o volume `oracle-data`, e com ele todos os dados.
 
 ### Estrutura
 
