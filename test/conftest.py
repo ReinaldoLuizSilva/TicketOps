@@ -20,14 +20,12 @@ def _carregar_env() -> None:
 @pytest.fixture(scope="session")
 def env():
     _carregar_env()
-    os.environ["DB_DSN"] = "localhost:1521/FREEPDB1"
+    os.environ["DB_DSN"] = "localhost:1522/FREEPDB1"
 
 
 
 @pytest.fixture(scope="session")
-def api():
-    os.environ["DB_DSN"] = "localhost:1521/FREEPDB1"
-
+def api(env):
     from app.main import app
     with TestClient(app) as client:
         yield client
