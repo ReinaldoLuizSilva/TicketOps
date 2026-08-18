@@ -1,6 +1,3 @@
-# Não existe rota de listagem própria (GET /chamados/{id}/comentarios devolve 405):
-# a leitura de comentários acontece dentro do detalhe do chamado, em COMENTARIOS.
-
 def _criar(api, chamado_id, autor="Autor Teste", texto="Comentário de teste"):
     return api.post(f"/chamados/{chamado_id}/comentarios", json={"autor": autor, "texto": texto})
 

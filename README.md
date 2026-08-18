@@ -216,7 +216,6 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 - [ ] **M3** — Pipeline CI/CD com Workload Identity Federation
 - [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
-- [ ] **M6** — *(opcional)* Dashboard gerencial em Oracle APEX
 
 Pendência do M1: cobertura de testes do CRUD. O endpoint `GET /dashboard` (contagens por
 status e prioridade, tempo médio de resolução) está previsto e ainda não foi implementado.

@@ -71,3 +71,12 @@ def chamado(api, cliente):
     assert response.status_code == 201, response.text
     dados = response.json()
     yield dados
+
+@pytest.fixture
+def comentario(api, chamado):
+    response = api.post(
+        f"/chamados/{chamado['ID']}/comentarios",
+        json={"autor": "Autor Teste", "texto": "Comentário de teste"},
+    )
+    assert response.status_code == 201, response.text
+    yield response.json()
