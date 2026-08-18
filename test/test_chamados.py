@@ -211,7 +211,8 @@ def test_atualizar_chamado_nulo(api, chamado):
             "prioridade": 'B',
         },
     )
-    assert response.status_code == 500, response.text
+    assert response.status_code == 400, response.text
+    assert response.json() == {"detail": "Campo obrigatório não informado"}
 
 def test_atualizar_chamado_titulo_vazio(api, chamado):
     response = api.patch(
