@@ -171,7 +171,8 @@ def test_atualizar_cliente_valida_updated_updatedby(api, db):
 
 def test_atualizar_cliente_nome_nulo(api, cliente):
     response = api.put(f"/clientes/{cliente['ID']}", json={"nome": None})
-    assert response.status_code == 500, response.text
+    assert response.status_code == 400, response.text
+    assert response.json() == {"detail": "Campo obrigatório não informado"}
 
 def test_atualizar_cliente_nome_vazio(api, cliente):
     response = api.put(f"/clientes/{cliente['ID']}", json={"nome": ""})
