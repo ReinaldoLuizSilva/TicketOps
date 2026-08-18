@@ -5,8 +5,8 @@ portfólio para Cloud/DevOps Engineering. A aplicação é deliberadamente simpl
 tabelas e regras de negócio diretas — para que o esforço fique na infraestrutura em volta
 dela: containers, IaC, pipeline, gestão de segredos e observabilidade.
 
-Clientes abrem chamados, analistas atualizam status e comentam, e um endpoint de dashboard
-resume as estatísticas.
+Clientes abrem chamados, analistas atualizam status e comentam. Um endpoint de dashboard com
+as estatísticas do atendimento está previsto e ainda não foi implementado.
 
 ## Stack
 
@@ -216,3 +216,7 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 - [ ] **M3** — Pipeline CI/CD com Workload Identity Federation
 - [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
+
+Fora dos milestones: o `GET /dashboard` (contagens por status e prioridade, tempo médio de
+resolução) faz parte do escopo do projeto e ainda não foi implementado. Depende de expor
+`criado_em` nas respostas de chamado, que hoje não sai do `SELECT`.
