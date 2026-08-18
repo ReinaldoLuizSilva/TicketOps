@@ -13,6 +13,7 @@ _ORA_HTTP = {
     "ORA-12899": (400, "Valor muito grande para o campo"),
     "ORA-01400": (400, "Campo obrigatório não informado"),
     "ORA-02290": (400, "Valor inválido para o campo"),
+    "ORA-01407": (400, "Campo obrigatório não informado"),
 }
 
 
