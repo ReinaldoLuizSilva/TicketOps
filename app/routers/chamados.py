@@ -1,6 +1,8 @@
 from typing import Literal
+
 import oracledb
 from fastapi import APIRouter, Depends, HTTPException, Query
+
 from app.db import get_conn
 from app.schemas import ChamadosCreate, ChamadoUpdate, ComentarioCreate
 
@@ -103,7 +105,7 @@ def excluir_chamado(chamado_id: int, conn=Depends(get_conn)):
         return
 
 
-@router.put("/{chamado_id}", status_code=204)
+@router.patch("/{chamado_id}", status_code=204)
 def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
     campos = chamado.model_dump(exclude_unset=True)
     if not campos:
@@ -170,10 +172,10 @@ def criar_comentario(chamado_id: int, comentario: ComentarioCreate, conn=Depends
                 raise HTTPException(status_code=404, detail="Chamado não encontrado") from exc
             raise
         conn.commit()
-        return{
-            "ID": new_id.getvalue()[0],
-            "CHAMADO_ID": chamado_id,
-            "AUTOR": comentario.autor,
-            "TEXTO": comentario.texto,
-            "CRIADO_EM": new_created.getvalue()[0],
-        }
+    return{
+        "ID": new_id.getvalue()[0],
+        "CHAMADO_ID": chamado_id,
+        "AUTOR": comentario.autor,
+        "TEXTO": comentario.texto,
+        "CRIADO_EM": new_created.getvalue()[0]
+    }
