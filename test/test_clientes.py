@@ -121,7 +121,7 @@ def test_atualizar_cliente_email(api, cliente):
     assert atualizado["NOME"] == cliente["NOME"]
     assert atualizado["EMAIL"] == email
 
-def test_atualizar_cliente_completo(api, cliente):
+def test_atualizar_cliente(api, cliente):
     novo_nome = "Cliente Atualizado"
     email = novo_email()
     response = api.put(f"/clientes/{cliente['ID']}", json={"nome": novo_nome, "email": email})
