@@ -44,7 +44,8 @@ def novo_email() -> str:
 
 def apagar_cliente(db, cliente_id):
     with db.cursor() as cursor:
-        cursor.execute("DELETE FROM comentarios WHERE chamado_id IN (SELECT id FROM chamados WHERE cliente_id = :id)", id=cliente_id)
+        cursor.execute("DELETE FROM comentarios WHERE chamado_id IN (SELECT id FROM chamados WHERE cliente_id = :id)"
+                       , id=cliente_id)
         cursor.execute("DELETE FROM chamados WHERE cliente_id = :id", id=cliente_id)
         cursor.execute("DELETE FROM clientes WHERE id = :id", id=cliente_id)
     db.commit()
