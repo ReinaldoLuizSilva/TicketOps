@@ -4,13 +4,17 @@ import oracledb
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import get_conn
-from app.schemas import ChamadosCreate, ChamadoUpdate, ComentarioCreate
+from app.schemas import (
+    ChamadoDetalhe,
+    ChamadoOut,
+    ChamadosCreate,
+    ChamadoUpdate,
+    ComentarioCreate,
+    ComentarioCriado,
+)
 
 router = APIRouter()
 
-# Colunas que o cliente pode escrever via PATCH, em ordem fixa: o mesmo conjunto de
-# campos gera sempre o mesmo texto SQL, e o Oracle reaproveita o cursor.
-# data_resolvido fica fora de propósito — é derivada do status, no próprio endpoint.
 _COLUNAS_CHAMADO = ("cliente_id", "titulo", "descricao", "prioridade", "status")
 _SELECT_CHAMADO = """SELECT
                         a.id,
@@ -20,7 +24,8 @@ _SELECT_CHAMADO = """SELECT
                         a.descricao,
                         a.prioridade,
                         a.status,
-                        a.data_resolvido
+                        a.data_resolvido,
+                        a.created
                     FROM
                         chamados a
                     JOIN
@@ -39,7 +44,7 @@ _SELECT_COMENTARIOS = """SELECT
                             id"""
 
 def _row_to_dict(row) -> dict:
-    id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = row
+    id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido, created = row
     return{
         "ID": id,
         "CLIENTE_ID": cliente_id,
@@ -49,9 +54,10 @@ def _row_to_dict(row) -> dict:
         "PRIORIDADE": prioridade,
         "STATUS": status,
         "DATA_RESOLVIDO": data_resolvido,
+        "CRIADO_EM": created,
     }
 
-@router.get("", status_code=200)
+@router.get("", status_code=200, response_model=list[ChamadoOut])
 def listar_chamados(
     status: Literal["A", "E", "R", "C"] | None = Query(
         default= None,
@@ -69,7 +75,7 @@ def listar_chamados(
         cur.execute(sql, params)
         return[_row_to_dict(row) for row in cur.fetchall()]
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=ChamadoOut)
 def criar_chamado(chamado: ChamadosCreate, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         new_id = cur.var(int)
@@ -86,24 +92,8 @@ def criar_chamado(chamado: ChamadosCreate, conn=Depends(get_conn)):
             },
         )
         conn.commit()
-        return {
-            "ID": new_id.getvalue()[0],
-            "CLIENTE": chamado.cliente_id,
-            "TITULO": chamado.titulo,
-            "DESCRICAO": chamado.descricao,
-            "PRIORIDADE": chamado.prioridade,
-        }
-
-
-@router.delete("/{chamado_id}", status_code=204)
-def excluir_chamado(chamado_id: int, conn=Depends(get_conn)):
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM chamados WHERE id = :id", {"id": chamado_id})
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Chamado não encontrado")
-        conn.commit()
-        return
-
+        cur.execute(_SELECT_CHAMADO + " WHERE a.id = :id", {"id": new_id.getvalue()[0]})
+        return _row_to_dict(cur.fetchone())
 
 @router.patch("/{chamado_id}", status_code=204)
 def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
@@ -128,7 +118,7 @@ def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_
     return
 
 
-@router.get("/{chamado_id}", status_code=200)
+@router.get("/{chamado_id}", status_code=200, response_model=ChamadoDetalhe)
 def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         cur.execute(_SELECT_CHAMADO + " WHERE a.id = :id", {"id": chamado_id})
@@ -149,7 +139,7 @@ def obter_chamado(chamado_id: int, conn=Depends(get_conn)):
         ]
         return chamado
 
-@router.post("/{chamado_id}/comentarios", status_code=201)
+@router.post("/{chamado_id}/comentarios", status_code=201, response_model=ComentarioCriado)
 def criar_comentario(chamado_id: int, comentario: ComentarioCreate, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         new_id = cur.var(int)

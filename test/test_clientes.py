@@ -105,7 +105,7 @@ def test_listar_clientes_por_id(api, db, cliente):
 
 def test_atualizar_cliente_nome(api, cliente):
     novo_nome = "Cliente Atualizado"
-    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": novo_nome})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={"nome": novo_nome})
     assert response.status_code == 204, response.text
 
     atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
@@ -114,7 +114,7 @@ def test_atualizar_cliente_nome(api, cliente):
 
 def test_atualizar_cliente_email(api, cliente):
     email = novo_email()
-    response = api.put(f"/clientes/{cliente['ID']}", json={"email": email})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={"email": email})
     assert response.status_code == 204, response.text
 
     atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
@@ -124,26 +124,26 @@ def test_atualizar_cliente_email(api, cliente):
 def test_atualizar_cliente(api, cliente):
     novo_nome = "Cliente Atualizado"
     email = novo_email()
-    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": novo_nome, "email": email})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={"nome": novo_nome, "email": email})
     assert response.status_code == 204, response.text
 
     atualizado = next(c for c in api.get("/clientes").json() if c["ID"] == cliente["ID"])
     assert atualizado == {"ID": cliente["ID"], "NOME": novo_nome, "EMAIL": email}
 
 def test_atualizar_cliente_nada(api, cliente):
-    response = api.put(f"/clientes/{cliente['ID']}", json={})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={})
     assert response.status_code == 400, response.text
     assert response.json() == {"detail": "Nada para atualizar"}
 
 def test_atualizar_cliente_inexistente(api):
-    response = api.put("/clientes/999999", json={"nome": "Cliente Atualizado"})
+    response = api.patch("/clientes/999999", json={"nome": "Cliente Atualizado"})
     assert response.status_code == 404, response.text
 
 def test_atualizar_cliente_email_duplicado(api, db, cliente):
     outro = api.post("/clientes", json={"nome": "Outro Cliente", "email": novo_email()})
     assert outro.status_code == 201, outro.text
     try:
-        response = api.put(f"/clientes/{outro.json()['ID']}", json={"email": cliente["EMAIL"]})
+        response = api.patch(f"/clientes/{outro.json()['ID']}", json={"email": cliente["EMAIL"]})
         assert response.status_code == 409, response.text
         assert response.json() == {"detail": "Registro duplicado"}
     finally:
@@ -158,7 +158,7 @@ def test_atualizar_cliente_valida_updated_updatedby(api, db):
         cursor.execute("SELECT updated, updatedby FROM clientes WHERE id = :id", id=dados["ID"])
         assert cursor.fetchone() == (None, None)
 
-    response = api.put(f"/clientes/{dados['ID']}", json={"nome": "Cliente Atualizado"})
+    response = api.patch(f"/clientes/{dados['ID']}", json={"nome": "Cliente Atualizado"})
     assert response.status_code == 204, response.text
 
     with db.cursor() as cursor:
@@ -170,12 +170,12 @@ def test_atualizar_cliente_valida_updated_updatedby(api, db):
     apagar_cliente(db, dados["ID"])
 
 def test_atualizar_cliente_nome_nulo(api, cliente):
-    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": None})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={"nome": None})
     assert response.status_code == 400, response.text
     assert response.json() == {"detail": "Campo obrigatório não informado"}
 
 def test_atualizar_cliente_nome_vazio(api, cliente):
-    response = api.put(f"/clientes/{cliente['ID']}", json={"nome": ""})
+    response = api.patch(f"/clientes/{cliente['ID']}", json={"nome": ""})
     assert response.status_code == 422, response.text
     assert response.json() == {
         "detail": [

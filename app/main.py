@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.db import close_pool, init_pool
 from app.errors import oracle_error_handler
 from app.routers import chamados, clientes
+from app.schemas import HealthOut
 
 
 @asynccontextmanager
@@ -31,6 +32,6 @@ app.include_router(clientes.router, prefix="/clientes", tags=["clientes"])
 app.include_router(chamados.router, prefix="/chamados", tags=["chamados"])
 
 
-@app.get("/health", tags=["infra"])
+@app.get("/health", tags=["infra"], response_model=HealthOut)
 def health():
     return {"status": "ok", "service": "ticketops", "version": app.version}

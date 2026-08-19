@@ -90,18 +90,22 @@ ambiente local: `DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD`.
 | `GET` | `/health` | Health check, usado pelo pipeline | 200 |
 | `GET` | `/clientes` | Lista clientes | 200 |
 | `POST` | `/clientes` | Cadastra cliente | 201 |
-| `PUT` | `/clientes/{id}` | Atualiza cliente | 204 |
+| `PATCH` | `/clientes/{id}` | Atualiza cliente | 204 |
 | `DELETE` | `/clientes/{id}` | Exclui cliente | 204 |
 | `GET` | `/chamados` | Lista chamados, com filtro opcional `?status=` | 200 |
 | `POST` | `/chamados` | Abre um chamado | 201 |
 | `GET` | `/chamados/{id}` | Detalhe do chamado, com seus comentários | 200 |
 | `PATCH` | `/chamados/{id}` | Atualiza status, prioridade ou dados do chamado | 204 |
-| `DELETE` | `/chamados/{id}` | Exclui chamado | 204 |
 | `POST` | `/chamados/{id}/comentarios` | Adiciona comentário ao chamado | 201 |
 
 Erros seguem o padrão do FastAPI (`{"detail": "..."}`). Violações de constraint do Oracle
 são traduzidas para o status HTTP correspondente em `app/errors.py` — por exemplo, e-mail
 duplicado devolve 409, e não 500.
+
+Chamado não tem `DELETE`: cancelamento é uma transição de status (`PATCH` com
+`{"status": "C"}`), porque num helpdesk o histórico de atendimento é o ativo — apagar o
+chamado levaria os comentários com ele. Cliente tem `DELETE`, para cadastro criado por
+engano; excluir um cliente que já abriu chamado devolve 409.
 
 ### Exemplos
 
@@ -123,6 +127,11 @@ curl -X POST http://localhost:8080/chamados/1/comentarios \
 curl -X PATCH http://localhost:8080/chamados/1 \
   -H "Content-Type: application/json" \
   -d '{"status": "R"}'
+
+# cancelar (não há DELETE de chamado: cancelamento é transição de status)
+curl -X PATCH http://localhost:8080/chamados/1 \
+  -H "Content-Type: application/json" \
+  -d '{"status": "C"}'
 ```
 
 No PowerShell, `curl` é alias de `Invoke-WebRequest`, que lança exceção em respostas de

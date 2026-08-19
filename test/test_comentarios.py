@@ -171,11 +171,8 @@ def test_criar_comentario_ignora_campo_extra(api, chamado):
     assert response.json()["CHAMADO_ID"] == chamado["ID"]
 
 
-def test_excluir_chamado_com_comentario_devolve_409(api, db, chamado, comentario):
-    response = api.delete(f"/chamados/{chamado['ID']}")
-    assert response.status_code == 409, response.text
-    assert response.json() == {"detail": "Registro possui dependentes e não pode ser excluído"}
+def test_cancelar_chamado_mantem_os_comentarios(api, chamado, comentario):
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "C"})
+    assert response.status_code == 204, response.text
 
-    with db.cursor() as cursor:
-        cursor.execute("SELECT 1 FROM chamados WHERE id = :id", id=chamado["ID"])
-        assert cursor.fetchone() is not None
+    assert [c["ID"] for c in _comentarios_do_chamado(api, chamado["ID"])] == [comentario["ID"]]

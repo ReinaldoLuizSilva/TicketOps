@@ -8,18 +8,26 @@ def test_criar_chamado(api, db, cliente):
         "prioridade": "A",
     })
     assert response.status_code == 201, response.text
-    assert response.json() == {
-        "ID": response.json()["ID"],
-        "CLIENTE": cliente["ID"],
-        "TITULO": "Chamado Teste",
-        "DESCRICAO": "Descrição do chamado teste",
-        "PRIORIDADE": "A",
-    }
+    dados = response.json()
+    assert dados["CLIENTE_ID"] == cliente["ID"]
+    assert dados["CLIENTE_NOME"] == cliente["NOME"]
+    assert dados["TITULO"] == "Chamado Teste"
+    assert dados["DESCRICAO"] == "Descrição do chamado teste"
+    assert dados["PRIORIDADE"] == "A"
+    assert dados["STATUS"] == "A"
+    assert dados["DATA_RESOLVIDO"] is None
+    assert dados["CRIADO_EM"] is not None
 
     with db.cursor() as cursor:
         cursor.execute("SELECT status, data_resolvido FROM chamados WHERE id = :id",
                        id=response.json()["ID"])
         assert cursor.fetchone() == ("A", None)
+
+def test_criar_chamado_devolve_o_mesmo_formato_do_detalhe(api, chamado):
+    detalhe = api.get(f"/chamados/{chamado['ID']}").json()
+    assert set(detalhe) == set(chamado) | {"COMENTARIOS"}
+    assert {campo: valor for campo, valor in detalhe.items() if campo != "COMENTARIOS"} == chamado
+
 
 def test_listar_chamados(api, cliente):
     response = api.post(
@@ -265,22 +273,23 @@ def test_listar_chamados_filtra_por_status(api, chamado):
     resolvidos = api.get("/chamados?status=R").json()
     assert all(c["ID"] != chamado["ID"] for c in resolvidos)
 
-def test_excluir_chamado(api, db, chamado):
-    response = api.delete(f"/chamados/{chamado['ID']}")
+def test_cancelar_chamado(api, chamado):
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "C"})
+    assert response.status_code == 204, response.text
+
+    dados = api.get(f"/chamados/{chamado['ID']}").json()
+    assert dados["STATUS"] == "C"
+    assert dados["DATA_RESOLVIDO"] is None
+
+def test_cancelar_chamado_preserva_o_registro(api, db, chamado):
+    response = api.patch(f"/chamados/{chamado['ID']}", json={"status": "C"})
     assert response.status_code == 204, response.text
 
     with db.cursor() as cursor:
-        cursor.execute("SELECT 1 FROM chamados WHERE id = :id", id=chamado["ID"])
-        assert cursor.fetchone() is None
+        cursor.execute("SELECT status FROM chamados WHERE id = :id", id=chamado["ID"])
+        assert cursor.fetchone() == ("C",)
 
-def test_excluir_chamado_inexistente(api):
-    response = api.delete("/chamados/999999")
-    assert response.status_code == 404, response.text
-
-def test_excluir_chamado_duas_vezes(api, chamado):
+def test_chamado_nao_aceita_delete(api, chamado):
     response = api.delete(f"/chamados/{chamado['ID']}")
-    assert response.status_code == 204, response.text
-
-    response = api.delete(f"/chamados/{chamado['ID']}")
-    assert response.status_code == 404, response.text
+    assert response.status_code == 405, response.text
 
