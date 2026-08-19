@@ -1,22 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_conn
-from app.schemas import ClienteCreate, ClienteUpdate
+from app.schemas import ClienteCreate, ClienteOut, ClienteUpdate
 
 router = APIRouter()
 
-# Colunas que o cliente pode escrever via PATCH, em ordem fixa (ver comentário em chamados.py).
 _COLUNAS_CLIENTE = ("nome", "email")
 
 
-@router.get("", status_code=200)
+@router.get("", status_code=200, response_model=list[ClienteOut])
 def listar_clientes(conn=Depends(get_conn)):
     with conn.cursor() as cur:
         cur.execute("SELECT id, nome, email FROM clientes ORDER BY id")
         return [{"ID": id, "NOME": nome, "EMAIL": email} for id, nome, email in cur.fetchall()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=ClienteOut)
 def criar_cliente(cliente: ClienteCreate, conn=Depends(get_conn)):
     with conn.cursor() as cur:
         new_id = cur.var(int)

@@ -8,18 +8,26 @@ def test_criar_chamado(api, db, cliente):
         "prioridade": "A",
     })
     assert response.status_code == 201, response.text
-    assert response.json() == {
-        "ID": response.json()["ID"],
-        "CLIENTE": cliente["ID"],
-        "TITULO": "Chamado Teste",
-        "DESCRICAO": "Descrição do chamado teste",
-        "PRIORIDADE": "A",
-    }
+    dados = response.json()
+    assert dados["CLIENTE_ID"] == cliente["ID"]
+    assert dados["CLIENTE_NOME"] == cliente["NOME"]
+    assert dados["TITULO"] == "Chamado Teste"
+    assert dados["DESCRICAO"] == "Descrição do chamado teste"
+    assert dados["PRIORIDADE"] == "A"
+    assert dados["STATUS"] == "A"
+    assert dados["DATA_RESOLVIDO"] is None
+    assert dados["CRIADO_EM"] is not None
 
     with db.cursor() as cursor:
         cursor.execute("SELECT status, data_resolvido FROM chamados WHERE id = :id",
                        id=response.json()["ID"])
         assert cursor.fetchone() == ("A", None)
+
+def test_criar_chamado_devolve_o_mesmo_formato_do_detalhe(api, chamado):
+    detalhe = api.get(f"/chamados/{chamado['ID']}").json()
+    assert set(detalhe) == set(chamado) | {"COMENTARIOS"}
+    assert {campo: valor for campo, valor in detalhe.items() if campo != "COMENTARIOS"} == chamado
+
 
 def test_listar_chamados(api, cliente):
     response = api.post(
