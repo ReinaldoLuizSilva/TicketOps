@@ -1,9 +1,5 @@
 locals {
-  db_secrets = {
-    "db-user"     = "my-database-user"
-    "db-password" = "my-database-password"
-    "db-dsn"      = "my-database-dsn"
-  }
+  db_secrets = toset(["db-user", "db-password", "db-dsn"])
 }
 
 resource "google_secret_manager_secret" "db" {
