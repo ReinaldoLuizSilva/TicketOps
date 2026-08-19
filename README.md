@@ -24,8 +24,10 @@ Client — o driver opera em modo thin.
 
 ## Arquitetura de destino
 
-O estado atual é o ambiente local. A arquitetura em nuvem é entregue pelos milestones
-seguintes (ver [Roadmap](#roadmap)).
+Cloud Run, Artifact Registry e Secret Manager já estão provisionados por Terraform (M2). O
+deploy automático, a conexão com o Autonomous Database e a observabilidade vêm nos milestones
+seguintes (ver [Roadmap](#roadmap)); até o M3, quem serve no Cloud Run é uma imagem de
+exemplo, e o ambiente funcional é o local.
 
 ```
 GitHub Actions ──(Workload Identity Federation)──> GCP
@@ -36,6 +38,10 @@ GitHub Actions ──(Workload Identity Federation)──> GCP
 
 Cloud Run ──(mTLS via wallet)──> Oracle Autonomous Database (OCI)
 ```
+
+A infraestrutura em `terraform/` está documentada em [docs/infra](docs/infra/) —
+pré-requisitos, como aplicar, como destruir, as decisões de projeto e as armadilhas
+encontradas pelo caminho.
 
 ## Como rodar localmente
 
@@ -221,7 +227,7 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 
 - [x] **M0** — API `/health` rodando local em Docker, com teste
 - [x] **M1** — CRUD de chamados conectado ao Oracle, local via docker-compose
-- [ ] **M2** — Terraform provisionando o GCP (Cloud Run, Artifact Registry, Secret Manager)
+- [x] **M2** — Terraform provisionando o GCP (Cloud Run, Artifact Registry, Secret Manager)
 - [ ] **M3** — Pipeline CI/CD com Workload Identity Federation
 - [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
