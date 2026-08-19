@@ -5,7 +5,7 @@ from app.schemas import ClienteCreate, ClienteUpdate
 
 router = APIRouter()
 
-# Colunas que o cliente pode escrever via PUT, em ordem fixa (ver comentário em chamados.py).
+# Colunas que o cliente pode escrever via PATCH, em ordem fixa (ver comentário em chamados.py).
 _COLUNAS_CLIENTE = ("nome", "email")
 
 
@@ -38,7 +38,7 @@ def excluir_cliente(cliente_id: int, conn=Depends(get_conn)):
         return
 
 
-@router.put("/{cliente_id}", status_code=204)
+@router.patch("/{cliente_id}", status_code=204)
 def atualizar_cliente(cliente_id: int, cliente: ClienteUpdate, conn=Depends(get_conn)):
     campos = cliente.model_dump(exclude_unset=True)
     if not campos:

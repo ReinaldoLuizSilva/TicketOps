@@ -20,7 +20,8 @@ _SELECT_CHAMADO = """SELECT
                         a.descricao,
                         a.prioridade,
                         a.status,
-                        a.data_resolvido
+                        a.data_resolvido,
+                        a.created
                     FROM
                         chamados a
                     JOIN
@@ -39,7 +40,7 @@ _SELECT_COMENTARIOS = """SELECT
                             id"""
 
 def _row_to_dict(row) -> dict:
-    id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido = row
+    id, cliente_id, cliente_nome, titulo, descricao, prioridade, status, data_resolvido, created = row
     return{
         "ID": id,
         "CLIENTE_ID": cliente_id,
@@ -49,6 +50,7 @@ def _row_to_dict(row) -> dict:
         "PRIORIDADE": prioridade,
         "STATUS": status,
         "DATA_RESOLVIDO": data_resolvido,
+        "CRIADO_EM": created,
     }
 
 @router.get("", status_code=200)
