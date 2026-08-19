@@ -8,3 +8,10 @@ __pycache__/
 
 # Virtual environment
 .venv/
+
+# Terraform
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
