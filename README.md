@@ -90,7 +90,7 @@ ambiente local: `DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD`.
 | `GET` | `/health` | Health check, usado pelo pipeline | 200 |
 | `GET` | `/clientes` | Lista clientes | 200 |
 | `POST` | `/clientes` | Cadastra cliente | 201 |
-| `PUT` | `/clientes/{id}` | Atualiza cliente | 204 |
+| `PATCH` | `/clientes/{id}` | Atualiza cliente | 204 |
 | `DELETE` | `/clientes/{id}` | Exclui cliente | 204 |
 | `GET` | `/chamados` | Lista chamados, com filtro opcional `?status=` | 200 |
 | `POST` | `/chamados` | Abre um chamado | 201 |
