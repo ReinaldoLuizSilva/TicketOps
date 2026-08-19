@@ -92,21 +92,8 @@ def criar_chamado(chamado: ChamadosCreate, conn=Depends(get_conn)):
             },
         )
         conn.commit()
-        # Reconsulta em vez de montar a resposta na mão: garante o mesmo formato dos
-        # outros endpoints e devolve os defaults que o banco aplicou (status, created).
         cur.execute(_SELECT_CHAMADO + " WHERE a.id = :id", {"id": new_id.getvalue()[0]})
         return _row_to_dict(cur.fetchone())
-
-
-@router.delete("/{chamado_id}", status_code=204)
-def excluir_chamado(chamado_id: int, conn=Depends(get_conn)):
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM chamados WHERE id = :id", {"id": chamado_id})
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Chamado não encontrado")
-        conn.commit()
-        return
-
 
 @router.patch("/{chamado_id}", status_code=204)
 def atualizar_chamado(chamado_id: int, chamado: ChamadoUpdate, conn=Depends(get_conn)):
