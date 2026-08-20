@@ -10,12 +10,21 @@ _RAIZ = Path(__file__).resolve().parent.parent
 
 def _carregar_env() -> None:
     arquivo = _RAIZ / ".env"
-    for linha in arquivo.read_text(encoding="utf-8").splitlines():
-        linha = linha.strip()
-        if not linha or linha.startswith("#") or "=" not in linha:
-            continue
-        chave, valor = linha.split("=", 1)
-        os.environ[chave.strip()] = valor.strip()
+    if arquivo.exists():
+        for linha in arquivo.read_text(encoding="utf-8").splitlines():
+            linha = linha.strip()
+            if not linha or linha.startswith("#") or "=" not in linha:
+                continue
+            chave, valor = linha.split("=", 1)
+            os.environ[chave.strip()] = valor.strip()
+
+    faltando = [v for v in ("DB_USER", "DB_PASSWORD") if v not in os.environ]
+    if faltando:
+        pytest.fail(
+            f"{', '.join(faltando)} ausente(s): crie um .env (veja .env.example) "
+            "ou exporte as variáveis no ambiente",
+            pytrace=False,
+        )
 
 
 @pytest.fixture(scope="session")
