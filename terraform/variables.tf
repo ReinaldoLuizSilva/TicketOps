@@ -26,3 +26,8 @@ variable "image" {
   type        = string
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
+
+variable "github_repo" {
+  description = "Repositório do GitHub"
+  type        = string
+}
