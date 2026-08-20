@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app.main import app
 
+
 def test_sem_banco_health(monkeypatch):
     monkeypatch.setattr(db, "_pool", None)
     monkeypatch.setenv("DB_USER", "ticketops")
