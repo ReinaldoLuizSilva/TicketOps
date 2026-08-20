@@ -7,6 +7,7 @@ from fastapi import HTTPException
 _pool: oracledb.ConnectionPool | None = None
 logger = logging.getLogger(__name__)
 
+
 def init_pool() -> oracledb.ConnectionPool | None:
     global _pool
     if _pool is not None:
