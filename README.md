@@ -1,5 +1,7 @@
 # TicketOps
 
+[![CI](https://github.com/ReinaldoLuizSilva/TicketOps/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ReinaldoLuizSilva/TicketOps/actions/workflows/ci.yml)
+
 API REST de gestão de chamados de suporte (mini-helpdesk), construída como projeto de
 portfólio para Cloud/DevOps Engineering. A aplicação é deliberadamente simples — três
 tabelas e regras de negócio diretas — para que o esforço fique na infraestrutura em volta
@@ -24,10 +26,11 @@ Client — o driver opera em modo thin.
 
 ## Arquitetura de destino
 
-Cloud Run, Artifact Registry e Secret Manager já estão provisionados por Terraform (M2). O
-deploy automático, a conexão com o Autonomous Database e a observabilidade vêm nos milestones
-seguintes (ver [Roadmap](#roadmap)); até o M3, quem serve no Cloud Run é uma imagem de
-exemplo, e o ambiente funcional é o local.
+Cloud Run, Artifact Registry e Secret Manager estão provisionados por Terraform (M2), e desde
+o M3 todo merge na `main` publica a imagem e cria uma revisão nova, autenticando por Workload
+Identity Federation — sem nenhuma credencial do GCP no repositório. Quem serve no Cloud Run é a
+aplicação: `GET /health` responde 200, e `GET /chamados` responde **503** porque a conexão com
+o Autonomous Database é do M4. A observabilidade vem no M5 (ver [Roadmap](#roadmap)).
 
 ```
 GitHub Actions ──(Workload Identity Federation)──> GCP
@@ -228,10 +231,14 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 - [x] **M0** — API `/health` rodando local em Docker, com teste
 - [x] **M1** — CRUD de chamados conectado ao Oracle, local via docker-compose
 - [x] **M2** — Terraform provisionando o GCP (Cloud Run, Artifact Registry, Secret Manager)
-- [ ] **M3** — Pipeline CI/CD com Workload Identity Federation
+- [x] **M3** — Pipeline CI/CD com Workload Identity Federation
 - [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
 
+A pipeline e a infraestrutura estão documentadas em [`docs/cicd/`](docs/cicd/README.md) e
+[`docs/infra/`](docs/infra/README.md), com as decisões e as armadilhas encontradas construindo.
+
 Fora dos milestones: o `GET /dashboard` (contagens por status e prioridade, tempo médio de
-resolução) faz parte do escopo do projeto e ainda não foi implementado. Depende de expor
-`criado_em` nas respostas de chamado, que hoje não sai do `SELECT`.
+resolução) faz parte do escopo do projeto e ainda não foi implementado. A dependência técnica
+já está resolvida — `CRIADO_EM` é exposto nas respostas de chamado, então o tempo médio sai de
+`data_resolvido - created`.
