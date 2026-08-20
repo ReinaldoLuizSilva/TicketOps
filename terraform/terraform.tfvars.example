@@ -1,5 +1,6 @@
 # terraform.tfvars.example
 project_id = "ticketops-63450"
+github_repo = "ReinaldoLuizSilva/TicketOps"
 
 # region tem default us-central1 — só descomente para sobrescrever
 # region = "us-central1"

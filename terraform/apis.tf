@@ -5,6 +5,8 @@ locals {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
+    "sts.googleapis.com",
+    "iamcredentials.googleapis.com",
   ]
 }
 
