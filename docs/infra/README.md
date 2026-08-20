@@ -5,8 +5,9 @@ API: **Cloud Run**, **Artifact Registry** e **Secret Manager**, com o state num 
 Cloud Storage. Nada é criado pelo console, e não existe chave de service account em lugar
 nenhum do projeto.
 
-Entregue no **M2**. O deploy automático é do M3, a conexão com o Autonomous Database é do
-M4, e os alertas são do M5.
+Entregue no **M2** e estendido no **M3**, que acrescentou a federação de identidade para o
+GitHub Actions — ver [Pipeline CI/CD](../cicd/README.md). A conexão com o Autonomous Database é
+do M4, e os alertas são do M5.
 
 ## Pré-requisitos
 
@@ -39,10 +40,16 @@ O ADC é **único por máquina** (`%APPDATA%\gcloud\application_default_credenti
 Windows). Trocar de configuração do `gcloud` **não** troca a credencial que o Terraform usa:
 para isso é preciso rodar `application-default login` de novo com a outra conta.
 
-As demais APIs (`run`, `artifactregistry`, `secretmanager`, `iam`) são habilitadas pelo
-próprio Terraform, em `apis.tf`. As duas de bootstrap são exceção por um ovo-e-galinha: é a
-Service Usage API que permite habilitar as outras, então ela precisa estar ligada antes do
-primeiro `terraform apply`.
+As demais APIs (`run`, `artifactregistry`, `secretmanager`, `iam`, e desde o M3 `sts` e
+`iamcredentials`) são habilitadas pelo próprio Terraform, em `apis.tf`. As duas de bootstrap
+são exceção por um ovo-e-galinha: é a Service Usage API que permite habilitar as outras, então
+ela precisa estar ligada antes do primeiro `terraform apply`.
+
+As duas do M3 existem para a federação de identidade: sem `sts` e `iamcredentials` o
+`google-github-actions/auth@v2` falha na troca do token OIDC por credencial do GCP. Habilitação
+de API é eventualmente consistente — se o primeiro `apply` depois de acrescentá-las falhar com
+*"Identity Pool API has not been used in project ... before or it is disabled"*, rode o `apply`
+de novo sem mexer em nada.
 
 ### Região
 
@@ -83,14 +90,15 @@ A alternativa — um `terraform/bootstrap/` com state local — funciona, mas de
 terraform/
   versions.tf              required_version, required_providers, backend "gcs"
   providers.tf             provider google
-  variables.tf             project_id, region, repo_name, service_name, image
+  variables.tf             project_id, region, repo_name, service_name, image, github_repo
   terraform.tfvars.example valores de exemplo, versionado
   apis.tf                  google_project_service
   registry.tf              Artifact Registry + cleanup policy
   secrets.tf               contêineres dos secrets, sem valores
   iam.tf                   service account de runtime + bindings
   run.tf                   Cloud Run + acesso público
-  outputs.tf               URL do serviço, repositório de imagens, SA de runtime
+  wif.tf                   Workload Identity Federation, SA de deploy e seus bindings
+  outputs.tf               URL do serviço, repositório de imagens, as duas SAs, provider de WIF
 ```
 
 O `.terraform.lock.hcl` **é versionado** — é ele que fixa os hashes dos providers e garante
@@ -105,12 +113,18 @@ não casa com `*.tfvars`.
 | `google_project_service` | Habilita as APIs, com `disable_on_destroy = false` |
 | `google_artifact_registry_repository` | Repositório Docker, com cleanup policy |
 | `google_secret_manager_secret` | Um por credencial (`DB_USER`, `DB_PASSWORD`, `DB_DSN`) — **só o contêiner** |
-| `google_service_account` | Identidade de runtime do Cloud Run |
-| `google_secret_manager_secret_iam_member` | `secretAccessor` para a SA, **por secret** |
+| `google_service_account` | Duas: a identidade de runtime do Cloud Run e a de deploy da pipeline |
+| `google_secret_manager_secret_iam_member` | `secretAccessor` para a SA de runtime, **por secret** |
 | `google_cloud_run_v2_service` | O serviço |
-| `google_cloud_run_v2_service_iam_member` | `allUsers` com `roles/run.invoker` — é uma API pública |
+| `google_cloud_run_v2_service_iam_member` | `allUsers` com `roles/run.invoker` (API pública) e `run.admin` para a SA de deploy, **no serviço** |
+| `google_iam_workload_identity_pool` | O pool `github` das identidades federadas do GitHub Actions |
+| `google_iam_workload_identity_pool_provider` | Provider OIDC do issuer do GitHub, com `attribute_mapping` e `attribute_condition` |
+| `google_service_account_iam_member` | `workloadIdentityUser` para o `principalSet` do repositório, e o `actAs` da SA de deploy sobre a de runtime |
+| `google_artifact_registry_repository_iam_member` | `artifactregistry.writer` para a SA de deploy, **no repositório** |
 
-Quinze recursos no total. O bucket do state não está na lista, pelo motivo da seção anterior.
+Vinte e quatro recursos no total — eram quinze antes do M3. O bucket do state não está na
+lista, pelo motivo da seção anterior. Os nove que o M3 acrescentou estão documentados em
+[Pipeline CI/CD](../cicd/README.md); aqui ficam porque vivem no mesmo Terraform.
 
 ## Como aplicar
 
@@ -195,8 +209,13 @@ instância acesa 24/7 e é o erro mais caro possível aqui. O `max_instance_coun
 duas vezes: agora contra custo, no M4 contra o limite de sessões do Autonomous Database
 Always Free. Com `cpu_idle = true`, paga-se CPU só durante o request.
 
-**Cleanup policy no Artifact Registry não é opcional.** O Always Free é 0,5 GB e a imagem tem
-~200 MB: três ou quatro deploys do CI estouram a cota. A política é sem componente de tempo,
+**Cleanup policy no Artifact Registry não é opcional.** O Always Free é 0,5 GB, e sem política
+o repositório cresce a cada merge sem nunca encolher. Medido depois dos dois primeiros deploys
+do M3: **91,14 MB com duas imagens** — menos assustador que a estimativa original de ~200 MB
+por imagem, porque as layers são compartilhadas e o `Dockerfile` instala as dependências antes
+de copiar `app/`, então o custo marginal de um deploy é a layer do `app/`. É o
+`requirements.txt` que, ao mudar, cria layer nova e gorda. O teto ainda precisa existir: com
+três versões retidas, o crescimento para. A política é sem componente de tempo,
 de propósito — um `DELETE` por idade apagaria a imagem em produção num período sem deploy, e
 o Cloud Run não conseguiria subir instância nova. O par usado é um `DELETE` de tudo mais um
 `KEEP` das 3 versões mais recentes; **`KEEP` tem precedência sobre `DELETE`**, então o efeito
@@ -206,6 +225,22 @@ o Cloud Run não conseguiria subir instância nova. O par usado é um `DELETE` d
 `us-docker.pkg.dev/cloudrun/container/hello`, porque no primeiro `apply` o Artifact Registry
 acabou de ser criado, vazio. E `template[0].containers[0].image` está em `ignore_changes`:
 sem isso, cada `terraform apply` reverteria o deploy que a pipeline acabou de publicar.
+
+A imagem, porém, não é o único campo que o deploy mexe. Todo `gcloud run deploy` grava também
+`client` e `client_version` no serviço, registrando qual cliente o modificou por último — e o
+Terraform, que não tem esses campos na configuração, planeja zerá-los. O `plan` fica assim,
+para sempre:
+
+```
+~ google_cloud_run_v2_service.api will be updated in-place
+    - client         = "gcloud" -> null
+    - client_version = "568.0.0" -> null
+```
+
+O custo não é o campo, é o sinal: com esse ruído permanente o `plan` nunca mais diz
+`No changes` e deixa de servir como detector de drift. Os dois entram no `ignore_changes` ao
+lado da imagem. Não precisa de `apply` para convergir — `ignore_changes` só afeta o cálculo do
+plano.
 
 **`allUsers` como `run.invoker`** porque é uma API pública. Esse binding falha se o projeto
 estiver sob uma organização com `constraints/iam.allowedPolicyMemberDomains`; a policy
@@ -309,6 +344,12 @@ A imagem placeholder do Google não devolve 404 para rota inexistente — serve 
 exemplo em `/`, `/health`, `/chamados` e qualquer outro path. Distinguir placeholder de
 aplicação pelo status HTTP não funciona; use o corpo da resposta.
 
+Confirmado na prática no M3: momentos antes do primeiro deploy real, `GET /chamados` na URL
+pública devolvia **200 com o HTML "Congratulations | Cloud Run"**. É por isso que o smoke test
+da pipeline faz `grep '"service":"ticketops"'` no corpo em vez de olhar o código HTTP. A
+armadilha volta a valer para quem recriar a infraestrutura do zero, porque a primeira revisão é
+sempre a placeholder.
+
 ### Limites do Always Free são por conta de faturamento
 
 Não por projeto. Projetos antigos na mesma conta de faturamento dividem a cota:
@@ -331,7 +372,7 @@ O projeto é desenhado para caber no Always Free, mas R$ 0 depende de configura�
 | Item | Limite grátis | Estado atual |
 | --- | --- | --- |
 | Cloud Run | ~2M requests/mês, escala a zero | `min = 0`, `max = 2` |
-| Artifact Registry | 0,5 GB de storage | vazio, com cleanup policy de 3 versões |
+| Artifact Registry | 0,5 GB de storage | 91,14 MB em 2 imagens, com cleanup policy de 3 versões |
 | GCS (state) | 5 GB nas regiões `us-*` | alguns KB em `us-central1` |
 | Secret Manager | 6 versões ativas | 3 |
 | Egress | pequeno | no M4, Cloud Run → Autonomous Database é saída para internet |
@@ -342,10 +383,11 @@ dos `--threshold-rule` muda entre versões e para uma configuração única não
 
 ## Fronteiras com os próximos milestones
 
-**M3** — provider de Workload Identity Federation, service account de deploy com `run.admin`
-e `artifactregistry.writer`, o workflow do GitHub Actions, e o `required_status_checks` na
-proteção da `main` (só configurável depois do primeiro run do workflow, porque os checks são
-referenciados por nome). É aqui que o `ignore_changes` da imagem passa a valer de verdade.
+**M3 — entregue.** O pool e o provider de Workload Identity Federation, a service account de
+deploy com `run.admin` no serviço e `artifactregistry.writer` no repositório, e o `actAs` sobre
+a SA de runtime estão em `wif.tf`. O workflow, os checks obrigatórios e as decisões da pipeline
+estão em [Pipeline CI/CD](../cicd/README.md). Foi aqui que o `ignore_changes` passou a valer de
+verdade — e que ficou claro que a imagem não bastava, conforme a seção de decisões acima.
 
 **M4** — wallet do Autonomous Database no Secret Manager, montada em runtime; as variáveis
 `DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD` passam a ser preenchidas; as
