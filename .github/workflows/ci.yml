@@ -1,5 +1,11 @@
 name: CI
 
+env:
+  PROJECT_ID: ticketops-63450
+  REGION: us-central1
+  SERVICE: ticketops
+  REPO: ticketops
+
 on:
   pull_request:
   push:
@@ -72,3 +78,43 @@ jobs:
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
+
+  deploy:
+    needs: [lint, test, build, terraform]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: projects/371390921224/locations/global/workloadIdentityPools/github/providers/ticketops
+          service_account: ticketops-deploy@ticketops-63450.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build e push
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy
+        run: gcloud run deploy ${{ env.SERVICE }} --image "$IMAGE" --region ${{ env.REGION }} --quiet
+
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+                  --region ${{ env.REGION }} --format='value(status.url)')
+          for _ in $(seq 1 10); do
+            CORPO=$(curl -fsS "$URL/health") && break || sleep 5
+          done
+          echo "$CORPO" | grep -q '"service":"ticketops"' \
+            || { echo "resposta inesperada: $CORPO"; exit 1; }
