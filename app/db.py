@@ -1,13 +1,17 @@
+import logging
 import os
 
 import oracledb
+from fastapi import HTTPException
 
 _pool: oracledb.ConnectionPool | None = None
+logger = logging.getLogger(__name__)
 
-
-def init_pool() -> oracledb.ConnectionPool:
+def init_pool() -> oracledb.ConnectionPool | None:
     global _pool
-    if _pool is None:
+    if _pool is not None:
+        return _pool
+    try:
         _pool = oracledb.create_pool(
             user=os.environ["DB_USER"],
             password=os.environ["DB_PASSWORD"],
@@ -19,6 +23,9 @@ def init_pool() -> oracledb.ConnectionPool:
             max=4,
             increment=1,
         )
+    except Exception :
+        logger.exception("Erro ao criar pool de conexões com o banco de dados.")
+        _pool = None
     return _pool
 
 
@@ -30,8 +37,8 @@ def close_pool() -> None:
 
 
 def get_conn():
-    if _pool is None:
-        raise RuntimeError("pool não inicializado — init_pool() deve rodar no lifespan.")
+    if _pool is None and init_pool() is None:
+        raise HTTPException(status_code=503, detail="Erro ao criar pool de conexões com o banco de dados.")
     with _pool.acquire() as conn:
         try:
             yield conn
