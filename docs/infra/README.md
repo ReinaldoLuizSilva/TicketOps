@@ -210,12 +210,19 @@ duas vezes: agora contra custo, no M4 contra o limite de sessões do Autonomous 
 Always Free. Com `cpu_idle = true`, paga-se CPU só durante o request.
 
 **Cleanup policy no Artifact Registry não é opcional.** O Always Free é 0,5 GB, e sem política
-o repositório cresce a cada merge sem nunca encolher. Medido depois dos dois primeiros deploys
-do M3: **91,14 MB com duas imagens** — menos assustador que a estimativa original de ~200 MB
-por imagem, porque as layers são compartilhadas e o `Dockerfile` instala as dependências antes
-de copiar `app/`, então o custo marginal de um deploy é a layer do `app/`. É o
-`requirements.txt` que, ao mudar, cria layer nova e gorda. O teto ainda precisa existir: com
-três versões retidas, o crescimento para. A política é sem componente de tempo,
+o repositório cresce a cada merge sem nunca encolher. Medido nos três primeiros deploys do M3:
+**91,14 MB com duas imagens, 114,61 MB com três** — ou seja, **~23,5 MB por deploy**, mesmo
+quando o deploy não muda uma linha de código da aplicação.
+
+Vale saber por que não é menos: a expectativa razoável é que layers idênticas sejam
+compartilhadas e o custo marginal seja a layer do `app/`, de alguns KB. Não é o que acontece,
+porque layer de Docker inclui o timestamp dos arquivos — cada build do CI roda num runner
+limpo, o `checkout` dá mtime novo a tudo, e sem cache de build o `RUN pip install` também
+produz digest novo. Não há o que deduplicar.
+
+Com três versões retidas o teto fica em ~115 MB de 500 MB. É folga por margem, não por
+compartilhamento, e é o que permitiria subir a retenção para 5 ou 6 versões se a janela de
+rollback de três deploys ficar curta. A política é sem componente de tempo,
 de propósito — um `DELETE` por idade apagaria a imagem em produção num período sem deploy, e
 o Cloud Run não conseguiria subir instância nova. O par usado é um `DELETE` de tudo mais um
 `KEEP` das 3 versões mais recentes; **`KEEP` tem precedência sobre `DELETE`**, então o efeito
@@ -372,7 +379,7 @@ O projeto é desenhado para caber no Always Free, mas R$ 0 depende de configura�
 | Item | Limite grátis | Estado atual |
 | --- | --- | --- |
 | Cloud Run | ~2M requests/mês, escala a zero | `min = 0`, `max = 2` |
-| Artifact Registry | 0,5 GB de storage | 91,14 MB em 2 imagens, com cleanup policy de 3 versões |
+| Artifact Registry | 0,5 GB de storage | 114,61 MB em 3 imagens (~23,5 MB por deploy), teto pela cleanup policy de 3 versões |
 | GCS (state) | 5 GB nas regiões `us-*` | alguns KB em `us-central1` |
 | Secret Manager | 6 versões ativas | 3 |
 | Egress | pequeno | no M4, Cloud Run → Autonomous Database é saída para internet |

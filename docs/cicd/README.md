@@ -325,6 +325,44 @@ aperto. E o teto real de espera são os `retries` do healthcheck, não o `--wait
 compose — o `--wait` falha assim que o healthcheck esgota as tentativas, então quem manda é
 `interval × retries` mais o `start_period`.
 
+### As layers não deduplicam entre builds, e todo merge consome uma vaga do rollback
+
+Duas coisas que juntas encurtam a janela de rollback sem avisar.
+
+**As layers não deduplicam.** A teoria diz que dois deploys de código idêntico compartilham
+tudo e o custo marginal é a layer do `app/` — alguns KB. Medido, não é isso:
+
+```
+2 imagens →  91,14 MB
+3 imagens → 114,61 MB      (+23,5 MB para um deploy sem uma linha de código nova)
+```
+
+O motivo é que layer de Docker inclui o timestamp dos arquivos. Cada build do CI roda num
+runner limpo, e o `checkout` dá mtime novo a tudo, então o `COPY app/ app/` produz digest novo.
+Sem cache de build, o `RUN pip install` também. Não há o que deduplicar. O teto com 3 versões
+retidas fica em ~115 MB de 500 MB — folgado, mas por margem, não por compartilhamento.
+
+**Todo merge deploya, inclusive de documentação.** O workflow não tem filtro de path no
+trigger de `push`, então um PR que muda só `docs/` roda os cinco jobs e publica uma imagem
+nova. Ela é byte-a-byte diferente da anterior (pelo motivo acima) e ocupa uma das três vagas
+retidas. Na prática: uma janela de rollback de três deploys pode ter um ou dois slots gastos
+com commits que não mudaram a aplicação.
+
+Se isso incomodar, o conserto é `paths-ignore` no trigger de **`push`** apenas:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**.md']
+```
+
+Aqui é seguro, ao contrário do filtro de path num job obrigatório: o trigger `pull_request`
+fica intocado, então os quatro checks continuam reportando em todo PR. Só o run de push para
+commits de documentação deixa de existir. A alternativa é subir a retenção do Artifact Registry
+de 3 para 5 ou 6 versões — a ~23,5 MB cada, cabe.
+
 ## Como validar
 
 O primeiro deploy da imagem real muda o que responde na URL pública. A prova é o par de
@@ -393,7 +431,7 @@ instância nova.
 | Item | Situação |
 | --- | --- |
 | GitHub Actions | Ilimitado em repositório **público**. Em privado são 2.000 min/mês, e a cobrança é a soma dos jobs, não o tempo de parede: ~1,7 min num run de PR e ~4,2 min num run de push na `main` |
-| Artifact Registry | 0,5 GB grátis. Layers são compartilhadas e o `Dockerfile` instala dependências antes de copiar `app/`, então o custo marginal por deploy é a layer do `app/` — alguns KB. É o `requirements.txt` que, ao mudar, cria layer nova e gorda |
+| Artifact Registry | 0,5 GB grátis. Medido: **~23,5 MB por deploy** (91,14 MB com 2 imagens → 114,61 MB com 3), então o teto com 3 versões retidas fica em ~115 MB. Ver a armadilha sobre deduplicação de layers |
 | Cloud Run | Uma revisão nova por merge não custa nada: revisão sem tráfego não tem instância, e `min_instance_count = 0` continua |
 | Egress | O `docker push` é entrada (grátis); o pull do Cloud Run é dentro da mesma região |
 
