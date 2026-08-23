@@ -5,9 +5,10 @@ API: **Cloud Run**, **Artifact Registry** e **Secret Manager**, com o state num 
 Cloud Storage. Nada é criado pelo console, e não existe chave de service account em lugar
 nenhum do projeto.
 
-Entregue no **M2** e estendido no **M3**, que acrescentou a federação de identidade para o
-GitHub Actions — ver [Pipeline CI/CD](../cicd/README.md). A conexão com o Autonomous Database é
-do M4, e os alertas são do M5.
+Entregue no **M2**, estendido no **M3**, que acrescentou a federação de identidade para o
+GitHub Actions — ver [Pipeline CI/CD](../cicd/README.md) — e no **M4**, que acrescentou a wallet
+do Autonomous Database montada como volume e o keep-alive do banco. O lado OCI da ponte está em
+[Autonomous Database](../adb/README.md). Os alertas são do M5.
 
 ## Pré-requisitos
 
@@ -40,8 +41,9 @@ O ADC é **único por máquina** (`%APPDATA%\gcloud\application_default_credenti
 Windows). Trocar de configuração do `gcloud` **não** troca a credencial que o Terraform usa:
 para isso é preciso rodar `application-default login` de novo com a outra conta.
 
-As demais APIs (`run`, `artifactregistry`, `secretmanager`, `iam`, e desde o M3 `sts` e
-`iamcredentials`) são habilitadas pelo próprio Terraform, em `apis.tf`. As duas de bootstrap
+As demais APIs (`run`, `artifactregistry`, `secretmanager`, `iam`, desde o M3 `sts` e
+`iamcredentials`, e desde o M4 `cloudscheduler`) são habilitadas pelo próprio Terraform, em
+`apis.tf`. As duas de bootstrap
 são exceção por um ovo-e-galinha: é a Service Usage API que permite habilitar as outras, então
 ela precisa estar ligada antes do primeiro `terraform apply`.
 
@@ -96,7 +98,8 @@ terraform/
   registry.tf              Artifact Registry + cleanup policy
   secrets.tf               contêineres dos secrets, sem valores
   iam.tf                   service account de runtime + bindings
-  run.tf                   Cloud Run + acesso público
+  run.tf                   Cloud Run + acesso público + volume da wallet
+  scheduler.tf             keep-alive diário do ADB no /ready
   wif.tf                   Workload Identity Federation, SA de deploy e seus bindings
   outputs.tf               URL do serviço, repositório de imagens, as duas SAs, provider de WIF
 ```
@@ -112,19 +115,24 @@ não casa com `*.tfvars`.
 | --- | --- |
 | `google_project_service` | Habilita as APIs, com `disable_on_destroy = false` |
 | `google_artifact_registry_repository` | Repositório Docker, com cleanup policy |
-| `google_secret_manager_secret` | Um por credencial (`DB_USER`, `DB_PASSWORD`, `DB_DSN`) — **só o contêiner** |
+| `google_secret_manager_secret` | Um por credencial (`DB_USER`, `DB_PASSWORD`, `DB_DSN`) e, desde o M4, um para a wallet do ADB e um para a senha dela — **só o contêiner** |
 | `google_service_account` | Duas: a identidade de runtime do Cloud Run e a de deploy da pipeline |
 | `google_secret_manager_secret_iam_member` | `secretAccessor` para a SA de runtime, **por secret** |
-| `google_cloud_run_v2_service` | O serviço |
+| `google_cloud_run_v2_service` | O serviço, com o volume que monta a wallet como arquivo |
+| `google_cloud_scheduler_job` | `GET` diário no `/ready`, para o ADB Always Free não ser parado por inatividade |
 | `google_cloud_run_v2_service_iam_member` | `allUsers` com `roles/run.invoker` (API pública) e `run.admin` para a SA de deploy, **no serviço** |
 | `google_iam_workload_identity_pool` | O pool `github` das identidades federadas do GitHub Actions |
 | `google_iam_workload_identity_pool_provider` | Provider OIDC do issuer do GitHub, com `attribute_mapping` e `attribute_condition` |
 | `google_service_account_iam_member` | `workloadIdentityUser` para o `principalSet` do repositório, e o `actAs` da SA de deploy sobre a de runtime |
 | `google_artifact_registry_repository_iam_member` | `artifactregistry.writer` para a SA de deploy, **no repositório** |
 
-Vinte e quatro recursos no total — eram quinze antes do M3. O bucket do state não está na
-lista, pelo motivo da seção anterior. Os nove que o M3 acrescentou estão documentados em
-[Pipeline CI/CD](../cicd/README.md); aqui ficam porque vivem no mesmo Terraform.
+**Trinta** recursos no total — eram quinze antes do M3 e vinte e quatro antes do M4. O bucket do
+state não está na lista, pelo motivo da seção anterior. Os nove que o M3 acrescentou estão
+documentados em [Pipeline CI/CD](../cicd/README.md); aqui ficam porque vivem no mesmo Terraform.
+
+Os seis do M4 são: a API `cloudscheduler`, os dois contêineres de secret da wallet, os dois
+`secretAccessor` deles, e o job do Cloud Scheduler. O volume e as variáveis de ambiente não
+contam — são campos do serviço que já existia.
 
 ## Como aplicar
 
@@ -146,7 +154,7 @@ Isso não é defeito: é a consequência direta da decisão de que valor de segr
 pelo Terraform (ver [Decisões](#decisões)). A sequência é:
 
 ```powershell
-terraform apply -target="google_secret_manager_secret.db"
+terraform apply -target="google_secret_manager_secret.db" -target="google_secret_manager_secret.wallet" -target="google_secret_manager_secret.wallet_password"
 
 "placeholder" | gcloud secrets versions add ticketops-db-user     --data-file=-
 "placeholder" | gcloud secrets versions add ticketops-db-password --data-file=-
@@ -155,8 +163,15 @@ terraform apply -target="google_secret_manager_secret.db"
 terraform apply
 ```
 
-Placeholders bastam até o M4, quando os valores reais do Autonomous Database entram — aí o
-método de escrita importa, ver [Armadilhas](#armadilhas).
+Placeholder serve para subir a infraestrutura; **não serve para os cinco valores do M4**. A
+partir dele são cinco secrets, dois deles novos, e o método de escrita passa a importar: o pipe
+do PowerShell acrescenta BOM e CRLF, e isso destrói um PEM tão bem quanto destrói uma senha (ver
+[Armadilhas](#armadilhas)). A sequência real está em
+[Autonomous Database — subir os cinco valores](../adb/README.md#subir-os-cinco-valores).
+
+A coreografia de duas fases vale de novo toda vez que um secret **novo** entra: o Cloud Run se
+recusa a criar revisão que monte um secret sem nenhuma versão, e a mensagem que ele devolve —
+`Revision ... is not ready and cannot serve traffic` — não menciona secret nenhum.
 
 ### Validação
 
@@ -169,6 +184,17 @@ A raiz responde **200**. Enquanto a imagem for a placeholder do Google, o corpo 
 exemplo do Cloud Run — e `/health` também devolve 200, porque aquele container responde em
 qualquer caminho. O critério para saber quem está servindo é o **corpo**, não o status: HTML
 de exemplo é placeholder; JSON `{"status":"ok","service":"ticketops",...}` é a aplicação.
+
+Com a aplicação real no ar, o par de rotas responde a duas perguntas diferentes:
+
+```powershell
+$URL = terraform output -raw service_url
+curl.exe -s "$URL/health"    # {"status":"ok","service":"ticketops",...}  — a aplicação subiu
+curl.exe -s "$URL/ready"     # {"status":"ready","database":"ok"}         — ela alcança o ADB
+```
+
+O `/ready` é do M4 e é o que fecha o buraco: sem ele, uma revisão fica `Ready`, o `/health`
+responde 200, o deploy passa verde — e o banco está inacessível.
 
 ## Como destruir
 
@@ -205,9 +231,21 @@ todos os segredos que existirem".
 
 **Escala a zero, com teto.** `min_instance_count = 0` significa cold start no primeiro
 request; é uma escolha, não esquecimento, e é o argumento do Cloud Run. `min = 1` manteria
-instância acesa 24/7 e é o erro mais caro possível aqui. O `max_instance_count = 2` importa
-duas vezes: agora contra custo, no M4 contra o limite de sessões do Autonomous Database
-Always Free. Com `cpu_idle = true`, paga-se CPU só durante o request.
+instância acesa 24/7 e é o erro mais caro possível aqui. Com `cpu_idle = true`, paga-se CPU só
+durante o request.
+
+O `max_instance_count = 2` importa duas vezes, e desde o M4 a segunda é concreta: **o teto de
+sessões no ADB é `max_instance_count × pool max`**, hoje `2 × 4 = 8`, contra a ordem de 20
+sessões simultâneas do Always Free em 1 OCPU. Os dois números estão acoplados e moram em
+arquivos diferentes — o `max_instance_count` aqui, o `_POOL_MAX` no `app/db.py` — então a conta
+está escrita nos dois lugares. Subir o `max_instance_count` sem revisar o pool estoura o limite
+do banco, não o do Cloud Run, e o sintoma é `ORA-00018` em produção.
+
+**A wallet é arquivo, não variável de ambiente.** Segredo binário em `env` apareceria inteiro
+num `gcloud run services describe` e conta para o limite de tamanho do conjunto de variáveis do
+Cloud Run. Ela entra por `volumes` + `volume_mounts`, montada em `/wallet`. A **senha** da
+wallet, essa sim, é variável de ambiente vinda do Secret Manager: é texto curto e é o que o
+driver espera. Ver a armadilha do `dynamic "env"` abaixo, porque o caminho errado é convidativo.
 
 **Cleanup policy no Artifact Registry não é opcional.** O Always Free é 0,5 GB, e sem política
 o repositório cresce a cada merge sem nunca encolher. Medido nos três primeiros deploys do M3:
@@ -357,6 +395,43 @@ da pipeline faz `grep '"service":"ticketops"'` no corpo em vez de olhar o códig
 armadilha volta a valer para quem recriar a infraestrutura do zero, porque a primeira revisão é
 sempre a placeholder.
 
+### Reusar o `for_each` dos secrets transforma a wallet em variável de ambiente
+
+O `secrets.tf` tem um `for_each` sobre `local.db_secrets = ["db-user", "db-password", "db-dsn"]`,
+e o `run.tf` itera **o mesmo mapa** num `dynamic "env"` para montar as variáveis de ambiente.
+Acrescentar `"db-wallet"` àquele `toset` é o movimento natural — a linha até parece a certa — e
+o resultado é uma variável `DB_WALLET` com o **PEM inteiro dentro**.
+
+Sem erro no `plan`, sem aviso no `apply`. É o oposto do que se quer, e ainda pode estourar
+sozinho o limite de tamanho do conjunto de variáveis do serviço.
+
+A wallet e a senha dela são **recursos próprios**, fora do `for_each`, e o comentário que diz
+isso está no `secrets.tf` — no lugar onde alguém vai tentar editar.
+
+A verificação depois do apply é direta, e o resultado tem de ser vazio:
+
+```bash
+gcloud run services describe ticketops --region us-central1 \
+  --format='value(spec.template.spec.containers[0].env)' | grep -c "BEGIN"   # 0
+```
+
+### `DB_WALLET_LOCATION` é diretório; `path` é arquivo
+
+No `volume_mounts` vai o `mount_path` (`/wallet`); no `items` vai o `path` (`ewallet.pem`). A
+variável de ambiente aponta para o **diretório**. Apontá-la para `/wallet/ewallet.pem` faz o
+modo thin procurar `/wallet/ewallet.pem/ewallet.pem` e falhar no handshake TLS com uma mensagem
+que não fala em caminho nenhum.
+
+### Rodar versão nova de secret não troca o arquivo montado
+
+`version = "latest"` é resolvido **quando a revisão é criada**, não a cada request. Publicar uma
+versão nova da wallet não muda nada no container até existir uma revisão nova — o que, nesta
+pipeline, significa um merge na `main` ou um `gcloud run services update`.
+
+Não é bug: é o mesmo modelo de imutabilidade de revisão que faz o rollback funcionar. Mas é
+surpresa garantida na primeira rotação, porque o console mostra a versão nova como ativa
+enquanto o container continua lendo a antiga.
+
 ### Limites do Always Free são por conta de faturamento
 
 Não por projeto. Projetos antigos na mesma conta de faturamento dividem a cota:
@@ -372,6 +447,16 @@ de seis sem destruir as antigas começa a contar:
 gcloud secrets versions destroy 1 --secret=ticketops-db-password
 ```
 
+Depois do M4 isso deixou de ser folgado: são **cinco** secrets, então sobra **uma** vaga. A
+próxima rotação — de senha ou de wallet — precisa destruir a versão antiga no mesmo movimento,
+não depois. Conferir antes de rotacionar:
+
+```powershell
+gcloud secrets list --format="value(name)" |
+  ForEach-Object { gcloud secrets versions list $_ --filter="state=ENABLED" --format="value(name)" } |
+  Measure-Object | Select-Object -ExpandProperty Count      # tem de dar 5
+```
+
 ## Custo
 
 O projeto é desenhado para caber no Always Free, mas R$ 0 depende de configuração.
@@ -381,12 +466,16 @@ O projeto é desenhado para caber no Always Free, mas R$ 0 depende de configura�
 | Cloud Run | ~2M requests/mês, escala a zero | `min = 0`, `max = 2` |
 | Artifact Registry | 0,5 GB de storage | 114,61 MB em 3 imagens (~23,5 MB por deploy), teto pela cleanup policy de 3 versões |
 | GCS (state) | 5 GB nas regiões `us-*` | alguns KB em `us-central1` |
-| Secret Manager | 6 versões ativas | 3 |
-| Egress | pequeno | no M4, Cloud Run → Autonomous Database é saída para internet |
+| Secret Manager | 6 versões ativas | **5** desde o M4 — uma de folga |
+| Cloud Scheduler | 3 jobs por mês | 1: o keep-alive do ADB |
+| Egress | 1 GiB/mês de saída na América do Norte | Cloud Run → Autonomous Database sai para a internet pública, e o ADB está em `sa-vinhedo-1` — destino na América do Sul. Alguns KB por query: arredonda para zero em qualquer faixa. Ver [Autonomous Database](../adb/README.md#custo) |
 
 Um alerta de orçamento no console (**Billing → Budgets & alerts**), com valor baixo e avisos
 em 50% e 100%, é a rede de segurança. Existe `gcloud billing budgets create`, mas a sintaxe
 dos `--threshold-rule` muda entre versões e para uma configuração única não vale a briga.
+
+Desde o M4 são **duas nuvens, dois alertas**: o equivalente na OCI é **Billing → Budgets**, com
+aviso em qualquer valor acima de zero. Ver [Autonomous Database](../adb/README.md#custo).
 
 ## Fronteiras com os próximos milestones
 
@@ -396,11 +485,16 @@ a SA de runtime estão em `wif.tf`. O workflow, os checks obrigatórios e as dec
 estão em [Pipeline CI/CD](../cicd/README.md). Foi aqui que o `ignore_changes` passou a valer de
 verdade — e que ficou claro que a imagem não bastava, conforme a seção de decisões acima.
 
-**M4** — wallet do Autonomous Database no Secret Manager, montada em runtime; as variáveis
-`DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD` passam a ser preenchidas; as
-versões placeholder dos três secrets são substituídas pelos valores reais; e o pool é
-recalibrado contra o limite de sessões do Always Free.
+**M4 — entregue.** A wallet do Autonomous Database vive no Secret Manager e é montada como
+arquivo em `/wallet`; `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD` estão preenchidas
+(`DB_CONFIG_DIR` continua vazia de propósito, porque o `DB_DSN` guarda o descritor de conexão
+completo em vez de um alias do `tnsnames.ora`); as versões placeholder dos três secrets deram
+lugar aos valores reais; e o pool foi recalibrado para `min=0` contra o limite de sessões do
+Always Free. O `google_cloud_scheduler_job` do keep-alive fecha a armadilha dos 7 dias. O lado
+OCI — conta, home region, schema, wallet — está em [Autonomous Database](../adb/README.md).
 
 **M5** — logs estruturados em JSON (o Cloud Logging já parseia stdout em JSON), uma
 `google_monitoring_alert_policy` para taxa de 5xx e um canal de notificação. Continua tudo no
-mesmo Terraform.
+mesmo Terraform. É o M5 que dá voz a duas coisas que hoje falham em silêncio: o job do Cloud
+Scheduler, que só reclama no Cloud Logging, e o 503 do `/ready`, que ninguém observa entre um
+deploy e outro.
