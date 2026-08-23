@@ -20,7 +20,7 @@ services:
       - "1522:1521"
     volumes:
       - oracle-data:/opt/oracle/oradata
-      - ./database:/container-entrypoint-initdb.d
+      - ./database/01-schema.sql:/container-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 30s
