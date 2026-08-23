@@ -36,12 +36,6 @@ class ComentarioCreate(BaseModel):
     autor: str = Field(min_length=1, max_length=120)
     texto: str = Field(min_length=1)
 
-
-# --- modelos de resposta -------------------------------------------------------
-# Os nomes dos campos são maiúsculos para casar com as chaves que os routers
-# montam a partir das colunas do Oracle.
-
-
 class ClienteOut(BaseModel):
     ID: int
     NOME: str
@@ -79,3 +73,8 @@ class HealthOut(BaseModel):
     status: str
     service: str
     version: str
+
+
+class ReadyOut(BaseModel):
+    status: str
+    database: str
