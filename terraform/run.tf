@@ -12,6 +12,21 @@ resource "google_cloud_run_v2_service" "api" {
       max_instance_count = 2
     }
 
+    # A wallet do ADB entra como ARQUIVO, montado de um secret. Nunca como
+    # variável de ambiente: é binário, é grande, e apareceria inteiro num
+    # "gcloud run services describe".
+    volumes {
+      name = "wallet"
+      secret {
+        secret = google_secret_manager_secret.wallet.secret_id
+        items {
+          path    = "ewallet.pem"
+          version = "latest"
+          mode    = 256
+        }
+      }
+    }
+
     containers {
       image = var.image
 
@@ -27,6 +42,12 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      volume_mounts {
+        name       = "wallet"
+        mount_path = "/wallet"
+      }
+
+      # DB_USER, DB_PASSWORD e DB_DSN — um env por secret do for_each.
       dynamic "env" {
         for_each = google_secret_manager_secret.db
         content {
@@ -36,6 +57,21 @@ resource "google_cloud_run_v2_service" "api" {
               secret  = env.value.secret_id
               version = "latest"
             }
+          }
+        }
+      }
+
+      env {
+        name  = "DB_WALLET_LOCATION"
+        value = "/wallet"
+      }
+
+      env {
+        name = "DB_WALLET_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.wallet_password.secret_id
+            version = "latest"
           }
         }
       }
@@ -51,7 +87,10 @@ resource "google_cloud_run_v2_service" "api" {
     ]
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.run_accessor]
+  depends_on = [
+    google_secret_manager_secret_iam_member.run_accessor,
+    google_secret_manager_secret_iam_member.run_accessor_wallet,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "public" {
