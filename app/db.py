@@ -4,6 +4,11 @@ import os
 import oracledb
 from fastapi import HTTPException
 
+_POOL_MIN = 0
+_POOL_MAX = 4
+
+_INDISPONIVEL = "Banco de dados indisponível"
+
 _pool: oracledb.ConnectionPool | None = None
 logger = logging.getLogger(__name__)
 
@@ -19,8 +24,8 @@ def init_pool() -> oracledb.ConnectionPool | None:
             config_dir=os.environ.get("DB_CONFIG_DIR"),
             wallet_location=os.environ.get("DB_WALLET_LOCATION"),
             wallet_password=os.environ.get("DB_WALLET_PASSWORD"),
-            min=1,
-            max=4,
+            min=_POOL_MIN,
+            max=_POOL_MAX,
             increment=1,
         )
     except Exception :
@@ -37,9 +42,17 @@ def close_pool() -> None:
 
 
 def get_conn():
-    if _pool is None and init_pool() is None:
-        raise HTTPException(status_code=503, detail="Erro ao criar pool de conexões com o banco de dados.")
-    with _pool.acquire() as conn:
+    pool = _pool if _pool is not None else init_pool()
+    if pool is None:
+        raise HTTPException(status_code=503, detail=_INDISPONIVEL)
+
+    try:
+        conn = pool.acquire()
+    except oracledb.DatabaseError:
+        logger.exception("Erro ao obter conexão do pool.")
+        raise HTTPException(status_code=503, detail=_INDISPONIVEL) from None
+
+    with conn:
         try:
             yield conn
         except Exception:
