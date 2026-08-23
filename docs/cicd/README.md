@@ -15,7 +15,7 @@ push na `main`; o `deploy` só em push na `main`.
 | Job | O que faz | Roda em PR | Tempo medido |
 | --- | --- | --- | --- |
 | `lint` | `ruff check .` | sim | 16s |
-| `test` | sobe Oracle por `docker compose` e roda os 66 testes | sim | 58s |
+| `test` | sobe Oracle por `docker compose` e roda os 68 testes | sim | 58s |
 | `build` | `docker build`, sem publicar | sim | 18s |
 | `terraform` | `fmt -check`, `init -backend=false`, `validate` | sim | 8s |
 | `deploy` | autentica por WIF, publica a imagem e cria revisão | **não** — *skipped* | 2m29s |
@@ -121,11 +121,21 @@ como o Terraform os definiu. Passar outras flags é que seria perigoso: qualquer
 passaria a disputar com o Terraform o que o `ignore_changes` foi feito para evitar. A fronteira
 é limpa — o Terraform define **como** o serviço é, a pipeline define **qual imagem** ele roda.
 
-**Oracle de verdade no runner, não mock.** Os 66 testes são de integração contra o banco. Um
+**Oracle de verdade no runner, não mock.** Os 68 testes são de integração contra o banco. Um
 CI que os mockasse jogaria fora justamente a cobertura que o M1 construiu, e um que os pulasse
 (`-m "not integracao"`) aprovaria merge sem testar nada. O volume do runner é sempre novo,
 então o `database/01-schema.sql` roda na criação — o schema vem de graça, pelo mesmo caminho do
 ambiente local.
+
+**O CI continua contra o container, não contra o ADB — e isso não muda no M4.** Apontar os
+testes para o Autonomous Database exigiria a wallet dentro do GitHub Actions, ou seja, um
+segredo no repositório, desfazendo a tese inteira deste milestone. E ainda: os testes apagam
+dados, consomem o limite de sessões do Always Free, e passariam a falhar em paralelo com
+qualquer outro uso do banco. Teste de integração precisa de banco descartável, e o container é
+exatamente isso.
+
+O que o CI ganhou do M4 foi o `/ready` no smoke test: o teste valida a lógica contra um banco
+limpo, o smoke test valida a conectividade contra o banco real. Cada checagem no seu lugar.
 
 **O `.env` é escrito pelo próprio workflow**, com senha descartável de `openssl rand -hex 16`.
 Não é só o `pytest` que precisa dele: o `docker compose` interpola `${ORACLE_PASSWORD}` e
@@ -181,10 +191,11 @@ Medido, mesma imagem, só a palavra `exec` de diferença:
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
 ```
 
-Com `exec` o uvicorn substitui o shell e vira PID 1. Importa no M4: sem o `close_pool()`, cada
-troca de revisão vaza as sessões do pool, e o Autonomous Database Always Free tem limite
-rígido de sessões. E `exit 137` no log parece OOM-kill, o que aponta a investigação para o
-lugar errado.
+Com `exec` o uvicorn substitui o shell e vira PID 1. Desde o M4 isso deixou de ser precaução e
+passou a ser necessidade: sem o `close_pool()`, cada troca de revisão vazaria sessões do pool
+contra o limite rígido do Autonomous Database Always Free — e são até 8 por vez, pela conta
+`max_instance_count × pool max`. E `exit 137` no log parece OOM-kill, o que aponta a
+investigação para o lugar errado.
 
 Verificação, com o container rodando:
 
@@ -257,6 +268,24 @@ echo "$CORPO" | grep -q '"service":"ticketops"'
 
 O laço com `sleep 5` existe porque `min_instance_count = 0`: a primeira requisição depois do
 deploy paga cold start.
+
+### Uma revisão `Ready` com o banco fora passa no smoke test do M3
+
+O `/health` não toca o banco, de propósito — se tocasse, uma indisponibilidade do Autonomous
+Database derrubaria o deploy. O efeito colateral é um estado que ninguém observava: a revisão
+fica `Ready`, o `/health` responde 200, a pipeline fica verde, **e a API devolve 503 em tudo que
+importa**.
+
+Daí o segundo passo do smoke test, desde o M4:
+
+```bash
+curl -fsS "$URL/health"  | grep -q '"service":"ticketops"'   # a aplicação subiu
+curl -fsS "$URL/ready"   | grep -q '"database":"ok"'         # ela alcança o ADB
+```
+
+O `-f` faz o 503 falhar o step, que é exatamente o desejado agora que alcançar o banco é o
+esperado. As duas checagens respondem perguntas diferentes e nenhuma substitui a outra: o
+`/health` continua sem tocar o banco, e quem toca é uma rota separada.
 
 ### Typo em chave de `with:` não falha o job
 
@@ -365,31 +394,39 @@ de 3 para 5 ou 6 versões — a ~23,5 MB cada, cabe.
 
 ## Como validar
 
-O primeiro deploy da imagem real muda o que responde na URL pública. A prova é o par de
-respostas:
+O deploy muda o que responde na URL pública. A prova é o trio de respostas:
 
 ```bash
 URL=$(cd terraform && terraform output -raw service_url)
-curl -s "$URL/health"                                       # {"status":"ok","service":"ticketops",...}
-curl -s -o /dev/null -w '%{http_code}\n' "$URL/chamados"    # 503
+curl -s "$URL/health"     # {"status":"ok","service":"ticketops",...}
+curl -s "$URL/ready"      # {"status":"ready","database":"ok"}
+curl -s "$URL/chamados"   # 200 e uma lista JSON
 ```
 
 ```powershell
 $URL = terraform -chdir=terraform output -raw service_url
 curl.exe -s "$URL/health"
+curl.exe -s "$URL/ready"
 curl.exe -s -o NUL -w "%{http_code}`n" "$URL/chamados"
 ```
 
 No PowerShell use `curl.exe` explicitamente: `curl` é apelido de `Invoke-WebRequest` no 5.1 e as
 flags não valem.
 
-`/health` em 200 com aquele JSON prova que quem serve é a aplicação. **`/chamados` em 503 é
-resultado de sucesso**, não de falha: prova ao mesmo tempo que o pool tolerante funcionou (a
-aplicação subiu sem banco) e que o M4 ainda não aconteceu. Os três secrets valem `placeholder`,
-então o `create_pool` falha no parse do DSN — em 0,000s, sem esperar timeout de rede.
+> **O 503 mudou de lado no M4.** Durante todo o M3, `GET /chamados` → **503 era resultado de
+> sucesso**: provava que o pool tolerante funcionava (a aplicação subia sem banco) e que a
+> conexão com o Autonomous Database ainda não existia — os três secrets valiam `placeholder` e o
+> `create_pool` falhava no parse do DSN em 0,000s, sem esperar timeout de rede.
+>
+> A partir do M4 esse mesmo 503 significa **problema**. Não é detalhe de redação: é o critério
+> que alguém usa para decidir se a produção está de pé. Quem for validar um deploy hoje espera
+> 200 nas três rotas.
 
 Se `/chamados` devolver 500, aí sim há bug: 500 diz "eu tenho um defeito", 503 diz "minha
-dependência caiu".
+dependência caiu". O 503 continua sendo a resposta **correta** quando o banco está fora — só
+deixou de ser a resposta esperada. E como o pool agora é `min=0`, uma credencial errada também
+aparece como 503, no `acquire()` e não na subida: quando o `/ready` falhar, leia o log, não só o
+status.
 
 A imagem no ar tem de ser a SHA do último merge:
 
@@ -437,14 +474,17 @@ instância nova.
 
 ## Fronteiras com os próximos milestones
 
-**M4** — com o banco real conectado, `/chamados` deixa de devolver 503 e o smoke test pode
-passar a checar o banco numa **rota de readiness separada**, sem tocar o `/health`. A decisão de
+**M4 — entregue.** Com o banco real conectado, `/chamados` devolve 200 e o smoke test passou a
+checar o banco na rota de readiness separada, `GET /ready`, sem tocar o `/health`. A decisão de
 o `/health` não falar com o banco continua valendo justamente por isso: acoplar o banco a ele
 faria uma indisponibilidade do Autonomous Database derrubar o deploy. O `close_pool()` no
-shutdown passa a importar de verdade, contra o limite de sessões do Always Free.
+shutdown passou a importar de verdade, contra o limite de sessões do Always Free. O lado OCI
+está em [Autonomous Database](../adb/README.md).
 
-**M5** — o `logger.exception` do pool tolerante passa a ser evento estruturado e pesquisável em
-vez de linha de texto, e uma `google_monitoring_alert_policy` para taxa de 5xx avisa quando um
-deploy quebra em produção, em vez de depender de alguém abrir a URL. O `exit 0` limpo no
-shutdown importa aqui: sem ele, todo scale-down aparece como `137` e polui a linha de base do
-alerta.
+**M5** — o `logger.exception` do pool tolerante e o do `acquire()` passam a ser eventos
+estruturados e pesquisáveis em vez de linha de texto, e uma `google_monitoring_alert_policy` para
+taxa de 5xx avisa quando um deploy quebra em produção, em vez de depender de alguém abrir a URL.
+O `exit 0` limpo no shutdown importa aqui: sem ele, todo scale-down aparece como `137` e polui a
+linha de base do alerta. E o job do Cloud Scheduler, que hoje falha em silêncio, ganha canal de
+notificação — é ele que descobriria o ADB parado por inatividade antes de um recrutador
+descobrir.

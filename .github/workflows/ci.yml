@@ -113,8 +113,20 @@ jobs:
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE }} \
                   --region ${{ env.REGION }} --format='value(status.url)')
+
+          # /health: a aplicacao subiu. O laco existe porque min_instance_count = 0
+          # e a primeira requisicao depois do deploy paga cold start.
           for _ in $(seq 1 10); do
             CORPO=$(curl -fsS "$URL/health") && break || sleep 5
           done
           echo "$CORPO" | grep -q '"service":"ticketops"' \
-            || { echo "resposta inesperada: $CORPO"; exit 1; }
+            || { echo "resposta inesperada em /health: $CORPO"; exit 1; }
+
+          # /ready: a aplicacao alcanca o ADB. O -f faz o 503 falhar o step, que e
+          # o comportamento desejado desde o M4 — um deploy que nao chega no banco
+          # tem de ficar vermelho.
+          for _ in $(seq 1 5); do
+            PRONTO=$(curl -fsS "$URL/ready") && break || sleep 5
+          done
+          echo "$PRONTO" | grep -q '"database":"ok"' \
+            || { echo "/ready nao confirmou o banco: ${PRONTO:-<503 ou sem resposta>}"; exit 1; }

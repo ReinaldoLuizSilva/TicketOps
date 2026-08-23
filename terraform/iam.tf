@@ -15,3 +15,17 @@ resource "google_secret_manager_secret_iam_member" "run_accessor" {
   member    = "serviceAccount:${google_service_account.run.email}"
 }
 
+# Os dois secrets do M4. Mesmo princípio do bloco acima: secretAccessor no
+# recurso de cada secret, nunca no projeto.
+resource "google_secret_manager_secret_iam_member" "run_accessor_wallet" {
+  for_each = {
+    wallet          = google_secret_manager_secret.wallet
+    wallet_password = google_secret_manager_secret.wallet_password
+  }
+
+  project   = each.value.project
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.run.email}"
+}
+

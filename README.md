@@ -24,27 +24,33 @@ Não há ORM: as queries são escritas à mão com bind variables, tanto por des
 para manter o domínio de banco explícito. Também não é necessário instalar o Oracle Instant
 Client — o driver opera em modo thin.
 
-## Arquitetura de destino
+## Arquitetura
 
-Cloud Run, Artifact Registry e Secret Manager estão provisionados por Terraform (M2), e desde
+Cloud Run, Artifact Registry e Secret Manager estão provisionados por Terraform (M2); desde
 o M3 todo merge na `main` publica a imagem e cria uma revisão nova, autenticando por Workload
-Identity Federation — sem nenhuma credencial do GCP no repositório. Quem serve no Cloud Run é a
-aplicação: `GET /health` responde 200, e `GET /chamados` responde **503** porque a conexão com
-o Autonomous Database é do M4. A observabilidade vem no M5 (ver [Roadmap](#roadmap)).
+Identity Federation — sem nenhuma credencial do GCP no repositório; e desde o M4 a API grava
+num Oracle Autonomous Database na OCI, por mTLS, com a wallet montada em runtime a partir do
+Secret Manager. A observabilidade é o que falta (ver [Roadmap](#roadmap)).
 
 ```
 GitHub Actions ──(Workload Identity Federation)──> GCP
                                                     ├── Cloud Run (API em container)
                                                     ├── Artifact Registry (imagens)
                                                     ├── Secret Manager (wallet + credenciais)
-                                                    └── Cloud Monitoring (logs + alerta 5xx)
+                                                    ├── Cloud Scheduler (keep-alive do ADB)
+                                                    └── Cloud Monitoring (logs + alerta 5xx)   ← M5
 
 Cloud Run ──(mTLS via wallet)──> Oracle Autonomous Database (OCI)
 ```
 
-A infraestrutura em `terraform/` está documentada em [docs/infra](docs/infra/) —
-pré-requisitos, como aplicar, como destruir, as decisões de projeto e as armadilhas
-encontradas pelo caminho.
+Em produção, `GET /health` responde 200 sem tocar o banco e `GET /ready` responde
+`{"status":"ready","database":"ok"}` depois de um `SELECT 1 FROM dual` no ADB. As duas rotas
+respondem perguntas diferentes, e o smoke test da pipeline checa as duas.
+
+A documentação está dividida por camada: [docs/infra](docs/infra/) para o Terraform no GCP,
+[docs/cicd](docs/cicd/) para a pipeline, e [docs/adb](docs/adb/) para a ponte multi-cloud com o
+Autonomous Database — cada uma com as decisões de projeto e as armadilhas encontradas
+construindo.
 
 ## Como rodar localmente
 
@@ -89,14 +95,24 @@ do pool com `ORA-01017: invalid credential`.
 O `DB_DSN` usa `db` como host porque esse é o nome do serviço no `docker-compose.yml`. Para
 conectar de fora dos containers (SQL Developer, sqlplus), use `localhost:1522/FREEPDB1`.
 
-Três variáveis opcionais existem para a conexão com o Autonomous Database e ficam vazias no
-ambiente local: `DB_CONFIG_DIR`, `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD`.
+Três variáveis existem para a conexão com o Autonomous Database e ficam **vazias no ambiente
+local** — o container fala TCP simples:
+
+| Variável | Em produção |
+| --- | --- |
+| `DB_WALLET_LOCATION` | `/wallet` — o **diretório** onde o Cloud Run monta o `ewallet.pem` |
+| `DB_WALLET_PASSWORD` | a senha da wallet, vinda do Secret Manager |
+| `DB_CONFIG_DIR` | continua vazia: o `DB_DSN` guarda o descritor de conexão completo, então não há `tnsnames.ora` para ler |
+
+Como o `os.environ.get` devolve `None` quando a variável não existe, o mesmo `app/db.py` serve
+os dois ambientes sem `if`. Ver [docs/adb](docs/adb/README.md).
 
 ## Endpoints
 
 | Método | Rota | Descrição | Sucesso |
 | --- | --- | --- | --- |
-| `GET` | `/health` | Health check, usado pelo pipeline | 200 |
+| `GET` | `/health` | Health check, usado pelo pipeline. **Não toca o banco** | 200 |
+| `GET` | `/ready` | Readiness: `SELECT 1 FROM dual` no banco. 503 se ele estiver fora | 200 |
 | `GET` | `/clientes` | Lista clientes | 200 |
 | `POST` | `/clientes` | Cadastra cliente | 201 |
 | `PATCH` | `/clientes/{id}` | Atualiza cliente | 204 |
@@ -214,13 +230,22 @@ app/
   errors.py          tradução de erros Oracle para status HTTP
   routers/           endpoints por recurso
 database/
-  01-schema.sql      DDL, executado na primeira subida do banco
+  01-schema.sql      DDL do container local, executado na primeira subida do banco
+  adb/
+    01-schema-adb.sql  o mesmo DDL para o Autonomous Database, aplicado à mão
 test/                testes com pytest
 ```
 
+Os dois scripts de schema existem porque o local começa com um `ALTER SESSION SET CONTAINER`
+que é inválido no ADB, e o do ADB precisa criar o usuário `ticketops`, que localmente nasce do
+container. É uma duplicação assumida — e `test/test_schema_adb.py` compara o DDL dos dois
+arquivos, para que a divergência apareça como CI vermelho e não como produção quebrada.
+
 O pool é criado no `lifespan` da aplicação e fechado no encerramento, com dimensionamento
-pequeno (`min=1`, `max=4`): o Cloud Run escala horizontalmente e o Autonomous Database
-Always Free tem limite de sessões.
+pequeno (`min=0`, `max=4`). O `min=0` é escolha do M4: o pool nasce sem conectar e abre a
+primeira conexão só no `acquire()`, o que tira o handshake TLS até a OCI do cold start e não
+deixa instância parada segurando sessão. O teto de sessões é `max_instance_count × max` — hoje
+`2 × 4 = 8` —, e os dois números estão acoplados.
 
 ### Convenções
 
@@ -232,11 +257,12 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 - [x] **M1** — CRUD de chamados conectado ao Oracle, local via docker-compose
 - [x] **M2** — Terraform provisionando o GCP (Cloud Run, Artifact Registry, Secret Manager)
 - [x] **M3** — Pipeline CI/CD com Workload Identity Federation
-- [ ] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
+- [x] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [ ] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
 
-A pipeline e a infraestrutura estão documentadas em [`docs/cicd/`](docs/cicd/README.md) e
-[`docs/infra/`](docs/infra/README.md), com as decisões e as armadilhas encontradas construindo.
+A pipeline, a infraestrutura e a ponte com o Autonomous Database estão documentadas em
+[`docs/cicd/`](docs/cicd/README.md), [`docs/infra/`](docs/infra/README.md) e
+[`docs/adb/`](docs/adb/README.md), com as decisões e as armadilhas encontradas construindo.
 
 Fora dos milestones: o `GET /dashboard` (contagens por status e prioridade, tempo médio de
 resolução) faz parte do escopo do projeto e ainda não foi implementado. A dependência técnica
