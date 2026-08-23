@@ -7,6 +7,7 @@ locals {
     "secretmanager.googleapis.com",
     "sts.googleapis.com",
     "iamcredentials.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ]
 }
 
