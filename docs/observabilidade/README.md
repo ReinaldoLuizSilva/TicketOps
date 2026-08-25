@@ -101,7 +101,7 @@ Os campos em uso hoje:
 | `ora` | `app/errors.py` | Código Oracle (`ORA-00001`), filtrável direto |
 | `rota`, `metodo` | `app/errors.py` | Qual endpoint gerou o erro |
 | `mensagem` | `app/errors.py` | Texto do Oracle, que traz nome de constraint e tamanhos |
-| `evento` | `app/db.py` | `pool_indisponivel` nos dois pontos: falha ao criar o pool e requisição rejeitada |
+| `evento` | `app/db.py` | `pool_indisponivel` quando o pool não subiu, `acquire_falhou` quando o pool está de pé e o banco recusa a conexão |
 
 **Nunca use `message` como chave de `extra`.** Ela colide com o campo que o formatter monta a
 partir de `record.getMessage()`, e o `update()` no fim do `format()` sobrescreveria o texto
@@ -236,7 +236,7 @@ Os parâmetros que não são estética:
 | `alignment_period` | `300s` | Com `ALIGN_SUM`, o valor alinhado passa a ser a contagem na janela |
 | `cross_series_reducer` | `REDUCE_SUM` por `service_name` | Cada revisão é uma série. Sem reduzir, um deploy quebrado com dois erros na revisão nova e um na antiga não passa de nenhum limiar |
 | `threshold_value` / `comparison` | `2` / `COMPARISON_GT` | "mais que dois" — ou seja, três ou mais |
-| `duration` / `trigger.count` | `0s` / `1` | A janela de cinco minutos já é o amortecimento; exigir persistência além dela só adiciona atraso ao aviso |
+| `duration` / `trigger.count` | `60s` / `1` | A janela de cinco minutos já é o amortecimento, e `0s` seria o ideal — mas a API recusa `0s` junto com `evaluation_missing_data` (ver armadilhas). `60s` é o menor valor que não atrasa nada na prática |
 | `evaluation_missing_data` | `EVALUATION_MISSING_DATA_INACTIVE` | Sem dados significa sem erros — ver armadilhas |
 | `auto_close` | `1800s` | O incidente fecha sozinho meia hora depois de o erro parar |
 | `notification_rate_limit.period` | `3600s` | No máximo um e-mail por hora pelo mesmo incidente. Um alerta que manda quarenta e-mails vira regra de filtro no Gmail, e aí é como se não existisse |
@@ -254,7 +254,7 @@ uma razão para o bucket do state continuar sendo tratado como material sensíve
 
 ## O uptime check
 
-Um `google_monitoring_uptime_check_config` bate em `/ready` a cada 15 minutos, de duas regiões.
+Um `google_monitoring_uptime_check_config` bate em `/ready` a cada 15 minutos, de três regiões.
 Resolve três coisas de uma vez:
 
 1. **Detecta indisponibilidade sem depender de tráfego.** O alerta de 5xx só dispara se alguém
@@ -275,9 +275,12 @@ Cada execução abrir uma sessão é também o que limita baixar o `period`: com
 `max_instance_count = 2`, os 900s atuais cabem folgados na conta de sessões do Always Free feita
 no M4 — 60s exigiria refazer a conta.
 
-**Duas regiões, no mínimo.** Com uma só, um problema de rede daquela região é indistinguível de
-queda do serviço, e o primeiro falso-positivo custa mais credibilidade do que o alerta inteiro
-vale.
+**Três regiões — e não é escolha, é exigência da API.** `selected_regions` com menos de três é
+recusado no apply. A regra existe pelo motivo certo: com uma região só, um problema de rede dela
+é indistinguível de queda do serviço, e o primeiro falso-positivo custa mais credibilidade do que
+o alerta inteiro vale. Estão em uso `USA_IOWA`, `USA_OREGON` e `USA_VIRGINIA`; o limiar da
+política de falha é "mais de uma região falhando", então uma região isolada com problema não
+gera e-mail.
 
 O `period` aceita um conjunto pequeno de valores — 60s, 300s, 600s, 900s. Outros são recusados no
 apply.
@@ -390,6 +393,34 @@ Os dois resultados possíveis são ruins e difíceis de diagnosticar: um alerta 
 noite porque o tráfego parou, ou um incidente aberto que nunca fecha porque a série sumiu antes de
 a condição voltar ao normal. `EVALUATION_MISSING_DATA_INACTIVE` diz o que se quer: sem dados
 significa sem erros.
+
+### O `terraform validate` não conhece as regras do Cloud Monitoring
+
+Duas restrições da API passam pelo `validate` e pelo `fmt` sem uma palavra, e só aparecem no
+`apply` — depois de o Terraform já ter criado metade dos recursos:
+
+```
+Error: Field ... evaluation_missing_data had an invalid value of
+"EVALUATION_MISSING_DATA_INACTIVE": Conditions setting evaluation_missing_data
+must have a non-zero duration.
+
+Error: Error creating UptimeCheckConfig: selected_regions must include at
+least three locations
+```
+
+**`evaluation_missing_data` exige `duration` não-zero.** A combinação natural — janela de cinco
+minutos fazendo o amortecimento e `duration = "0s"` para não atrasar o aviso — é recusada. Entre
+abrir mão do `evaluation_missing_data` e aceitar uma duração, a segunda custa menos: `60s` é
+irrelevante diante dos 3 a 10 minutos de ingestão, e o comportamento em "sem dados" continua
+explícito.
+
+**`selected_regions` exige no mínimo três.** Duas não bastam. A regra do Google existe pelo mesmo
+motivo pelo qual não se usa uma só, levado um passo adiante.
+
+A lição é a mesma das outras armadilhas deste doc, aplicada ao Terraform: `validate` prova que o
+HCL está bem formado, não que a nuvem vai aceitar. Para recursos de Monitoring, o `plan` também
+não prova nada — quem valida é o `apply`, e ele valida depois de já ter mexido no que veio antes
+na ordem de dependência.
 
 ### Logar a mensagem do Oracle é logar o que o Oracle escolher
 
@@ -531,7 +562,7 @@ que este projeto produza.
 | Cloud Logging | 50 GiB de ingestão grátis por projeto/mês; `_Default` com 30 dias de retenção sem custo. Esta API não gera MB/mês |
 | Métricas do Cloud Run | São métricas de sistema — não contam como métrica customizada e não são cobradas |
 | Políticas de alerta e canais | Sem custo hoje. O Google já anunciou cobrança por condição de alerta no passado e recuou; confirme na página de preços antes de multiplicar políticas |
-| Uptime checks | Sem custo na cota atual. Duas regiões a cada 15 min dão ~5,8 mil requisições/mês contra ~2 milhões grátis |
+| Uptime checks | Sem custo na cota atual. Três regiões a cada 15 min dão ~8,7 mil requisições/mês contra ~2 milhões grátis |
 | Notificação por e-mail | Grátis, e sem limite que este projeto alcance |
 | Cloud Trace | **Não usado, de propósito** — com um serviço só, o trace mostra o que o log já mostra |
 | Log-based metrics | **Não usadas, de propósito** — ver abaixo |
