@@ -2,5 +2,8 @@
 project_id = "ticketops-63450"
 github_repo = "ReinaldoLuizSilva/TicketOps"
 
+# e-mail para envios dos alertas
+alert_email = "teste@gmail.com"
+
 # region tem default us-central1 — só descomente para sobrescrever
 # region = "us-central1"
