@@ -75,6 +75,13 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+
+      # O Cloud Run injeta PORT, K_SERVICE, K_REVISION e K_CONFIGURATION — não o ID do projeto.
+      # O campo de trace do Cloud Logging exige "projects/PROJETO/traces/ID", daí esta env.
+      env {
+        name  = "GCP_PROJECT"
+        value = var.project_id
+      }
     }
   }
 

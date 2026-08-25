@@ -28,8 +28,15 @@ def init_pool() -> oracledb.ConnectionPool | None:
             max=_POOL_MAX,
             increment=1,
         )
-    except Exception :
-        logger.exception("Erro ao criar pool de conexões com o banco de dados.")
+    except Exception:
+        # WARNING, não ERROR: dependência externa fora não é bug do projeto, e um filtro por
+        # severity>=ERROR deve devolver só o que precisa de correção aqui. Quem vigia o 503
+        # é o alerta de 5xx. exc_info mantém o traceback inteiro numa entrada só.
+        logger.warning(
+            "banco indisponível: falha ao criar o pool de conexões",
+            exc_info=True,
+            extra={"evento": "pool_indisponivel"},
+        )
         _pool = None
     return _pool
 
@@ -44,12 +51,20 @@ def close_pool() -> None:
 def get_conn():
     pool = _pool if _pool is not None else init_pool()
     if pool is None:
+        logger.warning(
+            "requisição rejeitada: pool de conexões indisponível",
+            extra={"evento": "pool_indisponivel"},
+        )
         raise HTTPException(status_code=503, detail=_INDISPONIVEL)
 
     try:
         conn = pool.acquire()
     except oracledb.DatabaseError:
-        logger.exception("Erro ao obter conexão do pool.")
+        logger.warning(
+            "requisição rejeitada: falha ao obter conexão do pool",
+            exc_info=True,
+            extra={"evento": "acquire_falhou"},
+        )
         raise HTTPException(status_code=503, detail=_INDISPONIVEL) from None
 
     with conn:

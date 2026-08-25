@@ -6,6 +6,8 @@ import oracledb
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("LOG_FORMAT", "texto")
+
 _RAIZ = Path(__file__).resolve().parent.parent
 
 def _carregar_env() -> None:

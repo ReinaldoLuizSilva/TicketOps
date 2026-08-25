@@ -22,11 +22,16 @@ async def oracle_error_handler(request: Request, exc: oracledb.DatabaseError):
     full_code = getattr(error, "full_code", None)
     status, detail = _ORA_HTTP.get(full_code, (500, "Erro interno do servidor"))
 
-    logger.error(
-        "erro de banco %s %s: %s",
-        request.method,
-        request.url.path,
-        getattr(error, "message", exc),
+    logger.log(
+        logging.ERROR if status >= 500 else logging.INFO,
+        "erro de banco traduzido para %s",
+        status,
+        extra={
+            "ora": full_code,
+            "rota": request.url.path,
+            "metodo": request.method,
+            "mensagem": getattr(error, "message", str(exc)),
+        },
     )
 
     return JSONResponse(status_code=status, content={"detail": detail})
