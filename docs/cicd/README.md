@@ -481,10 +481,17 @@ faria uma indisponibilidade do Autonomous Database derrubar o deploy. O `close_p
 shutdown passou a importar de verdade, contra o limite de sessões do Always Free. O lado OCI
 está em [Autonomous Database](../adb/README.md).
 
-**M5** — o `logger.exception` do pool tolerante e o do `acquire()` passam a ser eventos
-estruturados e pesquisáveis em vez de linha de texto, e uma `google_monitoring_alert_policy` para
-taxa de 5xx avisa quando um deploy quebra em produção, em vez de depender de alguém abrir a URL.
-O `exit 0` limpo no shutdown importa aqui: sem ele, todo scale-down aparece como `137` e polui a
-linha de base do alerta. E o job do Cloud Scheduler, que hoje falha em silêncio, ganha canal de
-notificação — é ele que descobriria o ADB parado por inatividade antes de um recrutador
-descobrir.
+**M5 — entregue.** O `logger.exception` do pool tolerante e o do `acquire()` viraram eventos
+estruturados e pesquisáveis em vez de linha de texto — hoje são `logger.warning` com
+`exc_info=True` e `extra={"evento": ...}`, cada um numa única entrada com o traceback inteiro. E
+uma `google_monitoring_alert_policy` para **contagem** de 5xx — três ou mais em cinco minutos,
+não taxa — avisa quando um deploy quebra em produção, em vez de depender de alguém abrir a URL.
+
+O `exit 0` limpo no shutdown importa aqui: sem ele, todo scale-down apareceria como `137` e
+poluiria a linha de base do alerta. O `--no-access-log` acrescentado ao `CMD` desliga o access log
+do uvicorn, porque o Cloud Run já emite o log de requisição — com trace e latência, que o do
+uvicorn não tem.
+
+O job do Cloud Scheduler, que falhava em silêncio, **saiu**: quem faz o keep-alive agora é o
+uptime check em `/ready`, e ele tem alerta próprio quando falha. O formato de log, a tabela de
+severidades e o runbook estão em [Observabilidade](../observabilidade/README.md).

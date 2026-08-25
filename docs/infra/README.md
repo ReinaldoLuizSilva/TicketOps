@@ -8,7 +8,10 @@ nenhum do projeto.
 Entregue no **M2**, estendido no **M3**, que acrescentou a federação de identidade para o
 GitHub Actions — ver [Pipeline CI/CD](../cicd/README.md) — e no **M4**, que acrescentou a wallet
 do Autonomous Database montada como volume e o keep-alive do banco. O lado OCI da ponte está em
-[Autonomous Database](../adb/README.md). Os alertas são do M5.
+[Autonomous Database](../adb/README.md). O **M5** fechou a série: logs estruturados, duas
+políticas de alerta e um uptime check, documentados em
+[Observabilidade](../observabilidade/README.md) — e o keep-alive do M4 saiu, substituído pelo
+uptime check.
 
 ## Pré-requisitos
 
@@ -42,7 +45,7 @@ Windows). Trocar de configuração do `gcloud` **não** troca a credencial que o
 para isso é preciso rodar `application-default login` de novo com a outra conta.
 
 As demais APIs (`run`, `artifactregistry`, `secretmanager`, `iam`, desde o M3 `sts` e
-`iamcredentials`, e desde o M4 `cloudscheduler`) são habilitadas pelo próprio Terraform, em
+`iamcredentials`, e desde o M5 `monitoring`) são habilitadas pelo próprio Terraform, em
 `apis.tf`. As duas de bootstrap
 são exceção por um ovo-e-galinha: é a Service Usage API que permite habilitar as outras, então
 ela precisa estar ligada antes do primeiro `terraform apply`.
@@ -99,7 +102,7 @@ terraform/
   secrets.tf               contêineres dos secrets, sem valores
   iam.tf                   service account de runtime + bindings
   run.tf                   Cloud Run + acesso público + volume da wallet
-  scheduler.tf             keep-alive diário do ADB no /ready
+  monitoring.tf            canal de e-mail, as duas políticas de alerta e o uptime check
   wif.tf                   Workload Identity Federation, SA de deploy e seus bindings
   outputs.tf               URL do serviço, repositório de imagens, as duas SAs, provider de WIF
 ```
@@ -119,20 +122,28 @@ não casa com `*.tfvars`.
 | `google_service_account` | Duas: a identidade de runtime do Cloud Run e a de deploy da pipeline |
 | `google_secret_manager_secret_iam_member` | `secretAccessor` para a SA de runtime, **por secret** |
 | `google_cloud_run_v2_service` | O serviço, com o volume que monta a wallet como arquivo |
-| `google_cloud_scheduler_job` | `GET` diário no `/ready`, para o ADB Always Free não ser parado por inatividade |
 | `google_cloud_run_v2_service_iam_member` | `allUsers` com `roles/run.invoker` (API pública) e `run.admin` para a SA de deploy, **no serviço** |
 | `google_iam_workload_identity_pool` | O pool `github` das identidades federadas do GitHub Actions |
 | `google_iam_workload_identity_pool_provider` | Provider OIDC do issuer do GitHub, com `attribute_mapping` e `attribute_condition` |
 | `google_service_account_iam_member` | `workloadIdentityUser` para o `principalSet` do repositório, e o `actAs` da SA de deploy sobre a de runtime |
 | `google_artifact_registry_repository_iam_member` | `artifactregistry.writer` para a SA de deploy, **no repositório** |
+| `google_monitoring_notification_channel` | Canal de e-mail que recebe os dois alertas |
+| `google_monitoring_alert_policy` | Duas: contagem de respostas 5xx no Cloud Run, e falha do uptime check |
+| `google_monitoring_uptime_check_config` | `GET` em `/ready` a cada 15 minutos, de duas regiões |
 
-**Trinta** recursos no total — eram quinze antes do M3 e vinte e quatro antes do M4. O bucket do
-state não está na lista, pelo motivo da seção anterior. Os nove que o M3 acrescentou estão
-documentados em [Pipeline CI/CD](../cicd/README.md); aqui ficam porque vivem no mesmo Terraform.
+**Trinta e três** recursos no total — eram quinze antes do M3, vinte e quatro antes do M4 e
+trinta antes do M5. O bucket do state não está na lista, pelo motivo da seção anterior. Os nove
+que o M3 acrescentou estão documentados em [Pipeline CI/CD](../cicd/README.md) e os do M5 em
+[Observabilidade](../observabilidade/README.md); aqui ficam porque vivem no mesmo Terraform.
 
-Os seis do M4 são: a API `cloudscheduler`, os dois contêineres de secret da wallet, os dois
+Os seis do M4 eram: a API `cloudscheduler`, os dois contêineres de secret da wallet, os dois
 `secretAccessor` deles, e o job do Cloud Scheduler. O volume e as variáveis de ambiente não
 contam — são campos do serviço que já existia.
+
+O M5 soma três: **o job do Cloud Scheduler saiu** e a API `cloudscheduler` com ele, porque o
+uptime check em `/ready` faz o mesmo keep-alive com muito mais folga — 96 requisições por dia
+contra uma. Entraram o canal de notificação, as duas políticas de alerta, o uptime check e a API
+`monitoring`.
 
 ## Como aplicar
 
@@ -467,7 +478,8 @@ O projeto é desenhado para caber no Always Free, mas R$ 0 depende de configura�
 | Artifact Registry | 0,5 GB de storage | 114,61 MB em 3 imagens (~23,5 MB por deploy), teto pela cleanup policy de 3 versões |
 | GCS (state) | 5 GB nas regiões `us-*` | alguns KB em `us-central1` |
 | Secret Manager | 6 versões ativas | **5** desde o M4 — uma de folga |
-| Cloud Scheduler | 3 jobs por mês | 1: o keep-alive do ADB |
+| Cloud Monitoring | Políticas de alerta, canais e uptime checks sem custo na cota atual | 2 políticas, 1 canal, 1 uptime check |
+| Cloud Logging | 50 GiB de ingestão/mês, `_Default` com 30 dias de retenção | esta API não gera MB/mês |
 | Egress | 1 GiB/mês de saída na América do Norte | Cloud Run → Autonomous Database sai para a internet pública, e o ADB está em `sa-vinhedo-1` — destino na América do Sul. Alguns KB por query: arredonda para zero em qualquer faixa. Ver [Autonomous Database](../adb/README.md#custo) |
 
 Um alerta de orçamento no console (**Billing → Budgets & alerts**), com valor baixo e avisos
@@ -490,11 +502,20 @@ arquivo em `/wallet`; `DB_WALLET_LOCATION` e `DB_WALLET_PASSWORD` estão preench
 (`DB_CONFIG_DIR` continua vazia de propósito, porque o `DB_DSN` guarda o descritor de conexão
 completo em vez de um alias do `tnsnames.ora`); as versões placeholder dos três secrets deram
 lugar aos valores reais; e o pool foi recalibrado para `min=0` contra o limite de sessões do
-Always Free. O `google_cloud_scheduler_job` do keep-alive fecha a armadilha dos 7 dias. O lado
-OCI — conta, home region, schema, wallet — está em [Autonomous Database](../adb/README.md).
+Always Free. O keep-alive fechou a armadilha dos 7 dias — e no M5 passou do Cloud Scheduler para
+o uptime check. O lado OCI — conta, home region, schema, wallet — está em
+[Autonomous Database](../adb/README.md).
 
-**M5** — logs estruturados em JSON (o Cloud Logging já parseia stdout em JSON), uma
-`google_monitoring_alert_policy` para taxa de 5xx e um canal de notificação. Continua tudo no
-mesmo Terraform. É o M5 que dá voz a duas coisas que hoje falham em silêncio: o job do Cloud
-Scheduler, que só reclama no Cloud Logging, e o 503 do `/ready`, que ninguém observa entre um
-deploy e outro.
+**M5 — entregue.** Logs estruturados em JSON (o Cloud Logging já parseia stdout em JSON), duas
+`google_monitoring_alert_policy` — uma para **contagem** de respostas 5xx, três ou mais em cinco
+minutos, e outra para falha do uptime check —, um canal de notificação por e-mail e um
+`google_monitoring_uptime_check_config` em `/ready`. Tudo no mesmo Terraform, e o `alert_email`
+entrou como variável obrigatória em `terraform.tfvars`.
+
+Contagem e não taxa: com `min_instance_count = 0` e tráfego esporádico, uma janela com duas
+requisições e um erro dá 50%, e uma janela vazia não tem denominador. O raciocínio completo está
+em [Observabilidade](../observabilidade/README.md).
+
+É o M5 que dá voz ao que falhava em silêncio: o 503 do `/ready`, que ninguém observava entre um
+deploy e outro, e o próprio serviço fora do ar sem que ninguém tentasse acessá-lo — o uptime
+check é quem faz a tentativa.
