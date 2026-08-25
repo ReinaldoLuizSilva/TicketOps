@@ -39,7 +39,7 @@ resource "google_monitoring_alert_policy" "erro_5xx" {
 
       comparison      = "COMPARISON_GT"
       threshold_value = 2
-      duration        = "0s"
+      duration        = "60s"
 
       trigger {
         count = 1
@@ -65,7 +65,7 @@ resource "google_monitoring_alert_policy" "erro_5xx" {
       Respostas 5xx no servico TicketOps.
 
       1. `severity>=ERROR` no Logs Explorer: se houver traceback, e bug da aplicacao.
-      2. `GET /health`: se devolver 503, a dependencia e o Autonomous Database.
+      2. `GET /ready`: se devolver 503, a dependencia e o Autonomous Database.
       3. ADB parado por inatividade e o caso mais provavel — religar na console da OCI.
       4. Deploy recente: `gcloud run revisions list` e rollback por troca de trafego.
     EOT
@@ -74,8 +74,6 @@ resource "google_monitoring_alert_policy" "erro_5xx" {
 
 # Aponta para /ready, que toca o banco: além de detectar indisponibilidade sem depender de
 # tráfego, é o que mantém o ADB Always Free acordado — substituindo o Cloud Scheduler do M4.
-# Duas regiões no mínimo: com uma só, um problema de rede daquela região é indistinguível de
-# queda do serviço, e o primeiro falso-positivo custa mais do que o alerta vale.
 resource "google_monitoring_uptime_check_config" "ready" {
   display_name = "TicketOps - /ready"
   timeout      = "10s"
@@ -96,7 +94,10 @@ resource "google_monitoring_uptime_check_config" "ready" {
     }
   }
 
-  selected_regions = ["USA_IOWA", "USA_OREGON"]
+  # A API exige no minimo tres regioes. Com menos, um problema de rede numa delas fica
+  # indistinguivel de queda do servico — e o primeiro falso-positivo custa mais
+  # credibilidade do que o alerta inteiro vale.
+  selected_regions = ["USA_IOWA", "USA_OREGON", "USA_VIRGINIA"]
 }
 
 # Segunda política, separada da de 5xx de propósito: "ninguém consegue chegar" e "as
@@ -125,7 +126,7 @@ resource "google_monitoring_alert_policy" "uptime_falhou" {
 
       comparison      = "COMPARISON_GT"
       threshold_value = 1
-      duration        = "0s"
+      duration        = "60s"
 
       trigger {
         count = 1

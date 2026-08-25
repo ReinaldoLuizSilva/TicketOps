@@ -129,7 +129,7 @@ não casa com `*.tfvars`.
 | `google_artifact_registry_repository_iam_member` | `artifactregistry.writer` para a SA de deploy, **no repositório** |
 | `google_monitoring_notification_channel` | Canal de e-mail que recebe os dois alertas |
 | `google_monitoring_alert_policy` | Duas: contagem de respostas 5xx no Cloud Run, e falha do uptime check |
-| `google_monitoring_uptime_check_config` | `GET` em `/ready` a cada 15 minutos, de duas regiões |
+| `google_monitoring_uptime_check_config` | `GET` em `/ready` a cada 15 minutos, de três regiões |
 
 **Trinta e três** recursos no total — eram quinze antes do M3, vinte e quatro antes do M4 e
 trinta antes do M5. O bucket do state não está na lista, pelo motivo da seção anterior. Os nove
