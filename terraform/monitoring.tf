@@ -51,10 +51,6 @@ resource "google_monitoring_alert_policy" "erro_5xx" {
 
   alert_strategy {
     auto_close = "1800s"
-
-    notification_rate_limit {
-      period = "3600s"
-    }
   }
 
   notification_channels = [google_monitoring_notification_channel.email.id]
@@ -100,8 +96,6 @@ resource "google_monitoring_uptime_check_config" "ready" {
   selected_regions = ["USA_IOWA", "USA_OREGON", "USA_VIRGINIA"]
 }
 
-# Segunda política, separada da de 5xx de propósito: "ninguém consegue chegar" e "as
-# requisições estão falhando" são incidentes diferentes, com diagnósticos diferentes.
 resource "google_monitoring_alert_policy" "uptime_falhou" {
   display_name = "TicketOps - /ready inalcançável"
   combiner     = "OR"
@@ -138,10 +132,6 @@ resource "google_monitoring_alert_policy" "uptime_falhou" {
 
   alert_strategy {
     auto_close = "1800s"
-
-    notification_rate_limit {
-      period = "3600s"
-    }
   }
 
   notification_channels = [google_monitoring_notification_channel.email.id]

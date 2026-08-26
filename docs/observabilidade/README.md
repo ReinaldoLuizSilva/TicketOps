@@ -239,7 +239,7 @@ Os parâmetros que não são estética:
 | `duration` / `trigger.count` | `60s` / `1` | A janela de cinco minutos já é o amortecimento, e `0s` seria o ideal — mas a API recusa `0s` junto com `evaluation_missing_data` (ver armadilhas). `60s` é o menor valor que não atrasa nada na prática |
 | `evaluation_missing_data` | `EVALUATION_MISSING_DATA_INACTIVE` | Sem dados significa sem erros — ver armadilhas |
 | `auto_close` | `1800s` | O incidente fecha sozinho meia hora depois de o erro parar |
-| `notification_rate_limit.period` | `3600s` | No máximo um e-mail por hora pelo mesmo incidente. Um alerta que manda quarenta e-mails vira regra de filtro no Gmail, e aí é como se não existisse |
+| ~~`notification_rate_limit.period`~~ | — | A intenção era no máximo um e-mail por hora pelo mesmo incidente, porque um alerta que manda quarenta e-mails vira regra de filtro no Gmail. A API só aceita o campo em políticas log-based (ver armadilhas), e aqui o espaçamento fica por conta do `auto_close` |
 
 ### Por que e-mail, e não Slack
 
@@ -396,7 +396,7 @@ significa sem erros.
 
 ### O `terraform validate` não conhece as regras do Cloud Monitoring
 
-Duas restrições da API passam pelo `validate` e pelo `fmt` sem uma palavra, e só aparecem no
+Três restrições da API passam pelo `validate` e pelo `fmt` sem uma palavra, e só aparecem no
 `apply` — depois de o Terraform já ter criado metade dos recursos:
 
 ```
@@ -406,6 +406,10 @@ must have a non-zero duration.
 
 Error: Error creating UptimeCheckConfig: selected_regions must include at
 least three locations
+
+Error: Error creating AlertPolicy: Field alertStrategy.notificationRateLimit had
+an invalid value of "period { seconds: 3600 }": only log-based alert policies
+may specify a notification rate limit
 ```
 
 **`evaluation_missing_data` exige `duration` não-zero.** A combinação natural — janela de cinco
@@ -416,6 +420,13 @@ explícito.
 
 **`selected_regions` exige no mínimo três.** Duas não bastam. A regra do Google existe pelo mesmo
 motivo pelo qual não se usa uma só, levado um passo adiante.
+
+**`notification_rate_limit` só existe em política log-based.** O provider aceita o bloco em
+qualquer `google_monitoring_alert_policy`, e o `plan` o exibe inteiro; a API recusa quando a
+condição é de métrica. O que sobra para controlar a frequência é o `auto_close`: enquanto o
+incidente está aberto não sai notificação nova, e a política só volta a avisar depois de o
+incidente fechar e a condição violar de novo. Para as duas políticas daqui o efeito prático é
+parecido com o do limite de uma hora — o que se perde é o teto explícito.
 
 A lição é a mesma das outras armadilhas deste doc, aplicada ao Terraform: `validate` prova que o
 HCL está bem formado, não que a nuvem vai aceitar. Para recursos de Monitoring, o `plan` também
@@ -542,8 +553,14 @@ um e-mail que não chega pode ser as duas coisas, e descobrir qual é metade do 
   execuções que falharem enquanto o banco estiver parado.
 
 ```bash
-for _ in 1 2 3; do curl -s -o /dev/null -w '%{http_code}\n' "$URL/ready"; done
+for _ in 1 2 3 4 5; do curl -s -o /dev/null -w '%{http_code}\n' "$URL/ready" & done; wait
 ```
+
+Cinco e **em paralelo**, não três em série. `get_conn` chama `pool.acquire()` sem timeout
+explícito, e com o ADB parado o `python-oracledb` leva dezenas de segundos para desistir de cada
+tentativa. Em série as requisições se espalham por mais de cinco minutos, nenhuma janela de
+`alignment_period` junta as três que o limiar exige, e a conclusão errada é que o filtro está
+errado. Em paralelo caem todas no mesmo alinhamento.
 
 Espere dez minutos antes de mudar qualquer coisa (ver o atraso de ingestão, acima), e confirme
 também o `auto_close`: o incidente deve fechar sozinho meia hora depois de o erro parar.
@@ -551,6 +568,10 @@ também o `auto_close`: o incidente deve fechar sozinho meia hora depois de o er
 O que **não** funciona bem é fabricar erro com uma revisão de teste: sem tráfego roteado ela não
 recebe requisição, e com `--command` inválido a revisão não fica `Ready`, o que faz o próprio
 deploy falhar antes de gerar 5xx contáveis.
+
+**Registro — 26/08/2026.** Canal provado pelo botão de teste, ADB parado na console da OCI, 5xx
+forçados em `/chamados`, e-mail recebido. As duas políticas saem de "declaradas em Terraform" para
+"provadas em produção", que é o que fecha o item 7 da definição de pronto do M5.
 
 ## Custo
 
