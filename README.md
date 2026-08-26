@@ -262,10 +262,10 @@ Branches curtas com Pull Request para a `main`, conventional commits e squash me
 - [x] **M4** — Conexão ao Oracle Autonomous Database via wallet no Secret Manager
 - [x] **M5** — Observabilidade: logs estruturados e alerta de erro 5xx
 
-O M5 está entregue em código e em Terraform — logs estruturados em JSON, duas políticas de alerta
-e um uptime check em `/ready`. A caixa continua desmarcada por um motivo só: **o alerta ainda não
-foi provado disparando**, que é o item que separa uma política de Terraform de monitoramento de
-verdade. Marcar depois de forçar três 5xx e o e-mail chegar.
+O M5 está fechado: logs estruturados em JSON, duas políticas de alerta e um uptime check em
+`/ready` — e **o alerta foi provado disparando**, com o Autonomous Database parado de propósito
+na console da OCI e o e-mail recebido. É esse último item que separa uma política de Terraform de
+monitoramento de verdade.
 
 A pipeline, a infraestrutura, a ponte com o Autonomous Database e a observabilidade estão
 documentadas em [`docs/cicd/`](docs/cicd/README.md), [`docs/infra/`](docs/infra/README.md),
