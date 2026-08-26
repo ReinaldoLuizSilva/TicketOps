@@ -68,6 +68,8 @@ resource "google_monitoring_alert_policy" "erro_5xx" {
   }
 }
 
+# Aponta para /ready, que toca o banco: além de detectar indisponibilidade sem depender de
+# tráfego, é o que mantém o ADB Always Free acordado — substituindo o Cloud Scheduler do M4.
 resource "google_monitoring_uptime_check_config" "ready" {
   display_name = "TicketOps - /ready"
   timeout      = "10s"
@@ -88,6 +90,9 @@ resource "google_monitoring_uptime_check_config" "ready" {
     }
   }
 
+  # A API exige no minimo tres regioes. Com menos, um problema de rede numa delas fica
+  # indistinguivel de queda do servico — e o primeiro falso-positivo custa mais
+  # credibilidade do que o alerta inteiro vale.
   selected_regions = ["USA_IOWA", "USA_OREGON", "USA_VIRGINIA"]
 }
 
