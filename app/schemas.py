@@ -69,6 +69,15 @@ class ChamadoDetalhe(ChamadoOut):
     COMENTARIOS: list[ComentarioOut]
 
 
+class DashboardOut(BaseModel):
+    TOTAL: int
+    POR_STATUS: dict[Literal["A", "E", "R", "C"], int]
+    POR_PRIORIDADE: dict[Literal["B", "M", "A", "C"], int]
+    # None, e não 0, quando nenhum chamado foi resolvido: o AVG do Oracle devolve NULL sobre
+    # conjunto vazio, e um zero afirmaria que a resolução foi instantânea
+    TEMPO_MEDIO_RESOLUCAO_HORAS: float | None
+
+
 class HealthOut(BaseModel):
     status: str
     service: str

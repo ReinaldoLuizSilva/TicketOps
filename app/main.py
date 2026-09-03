@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Request
 from app.db import close_pool, get_conn, init_pool
 from app.errors import oracle_error_handler
 from app.logging_config import configurar_logging, trace_atual
-from app.routers import chamados, clientes
+from app.routers import chamados, clientes, dashboard
 from app.schemas import HealthOut, ReadyOut
 
 # Antes do FastAPI(...) de propósito: o uvicorn configura o logging no Config.load() e só
@@ -49,6 +49,8 @@ async def contexto_trace(request: Request, call_next):
 app.include_router(clientes.router, prefix="/clientes", tags=["clientes"])
 
 app.include_router(chamados.router, prefix="/chamados", tags=["chamados"])
+
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 
 @app.get("/health", tags=["infra"], response_model=HealthOut)

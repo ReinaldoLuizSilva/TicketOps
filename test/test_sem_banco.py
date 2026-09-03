@@ -19,6 +19,7 @@ def test_sem_banco_health(monkeypatch):
         assert client.get("/health").status_code == 200
         assert client.get("/ready").status_code == 503
         assert client.get("/chamados").status_code == 503
+        assert client.get("/dashboard").status_code == 503
 
 
 def test_sem_banco_falha_no_acquire(monkeypatch):
@@ -34,3 +35,4 @@ def test_sem_banco_falha_no_acquire(monkeypatch):
         assert client.get("/health").status_code == 200
         assert client.get("/ready").status_code == 503
         assert client.get("/chamados").status_code == 503
+        assert client.get("/dashboard").status_code == 503
