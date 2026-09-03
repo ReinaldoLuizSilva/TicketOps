@@ -7,8 +7,9 @@ portfólio para Cloud/DevOps Engineering. A aplicação é deliberadamente simpl
 tabelas e regras de negócio diretas — para que o esforço fique na infraestrutura em volta
 dela: containers, IaC, pipeline, gestão de segredos e observabilidade.
 
-Clientes abrem chamados, analistas atualizam status e comentam. Um endpoint de dashboard com
-as estatísticas do atendimento está previsto e ainda não foi implementado.
+Clientes abrem chamados, analistas atualizam status e comentam. Um endpoint de dashboard
+resume o atendimento: total de chamados, contagem por status e por prioridade, e o tempo médio
+de resolução.
 
 ## Stack
 
@@ -124,6 +125,7 @@ os dois ambientes sem `if`. Ver [docs/adb](docs/adb/README.md).
 | `GET` | `/chamados/{id}` | Detalhe do chamado, com seus comentários | 200 |
 | `PATCH` | `/chamados/{id}` | Atualiza status, prioridade ou dados do chamado | 204 |
 | `POST` | `/chamados/{id}/comentarios` | Adiciona comentário ao chamado | 201 |
+| `GET` | `/dashboard` | Estatísticas: total, contagem por status e prioridade, tempo médio de resolução | 200 |
 
 Erros seguem o padrão do FastAPI (`{"detail": "..."}`). Violações de constraint do Oracle
 são traduzidas para o status HTTP correspondente em `app/errors.py` — por exemplo, e-mail
@@ -159,7 +161,25 @@ curl -X PATCH http://localhost:8080/chamados/1 \
 curl -X PATCH http://localhost:8080/chamados/1 \
   -H "Content-Type: application/json" \
   -d '{"status": "C"}'
+
+# estatísticas do atendimento
+curl http://localhost:8080/dashboard
 ```
+
+O `/dashboard` responde com os buckets sempre completos, mesmo zerados, para que o consumidor
+não precise tratar chave ausente:
+
+```json
+{
+  "TOTAL": 12,
+  "POR_STATUS": {"A": 5, "E": 3, "R": 4, "C": 0},
+  "POR_PRIORIDADE": {"B": 2, "M": 6, "A": 3, "C": 1},
+  "TEMPO_MEDIO_RESOLUCAO_HORAS": 18.75
+}
+```
+
+`TEMPO_MEDIO_RESOLUCAO_HORAS` é `null` — e não `0` — quando nenhum chamado foi resolvido
+ainda: zero afirmaria que a resolução foi instantânea.
 
 No PowerShell, `curl` é alias de `Invoke-WebRequest`, que lança exceção em respostas de
 erro e descarta o corpo. Use `curl.exe` para ver o JSON de resposta.
@@ -274,6 +294,8 @@ documentadas em [`docs/cicd/`](docs/cicd/README.md), [`docs/infra/`](docs/infra/
 encontradas construindo.
 
 Fora dos milestones: o `GET /dashboard` (contagens por status e prioridade, tempo médio de
-resolução) faz parte do escopo do projeto e ainda não foi implementado. A dependência técnica
-já está resolvida — `CRIADO_EM` é exposto nas respostas de chamado, então o tempo médio sai de
-`data_resolvido - created`.
+resolução) está implementado. É uma query só, com agregação condicional — as contagens
+precisam da tabela inteira, então separar os recortes por `WHERE` custaria um round-trip até o
+Autonomous Database para cada um. O tempo médio sai de `data_resolvido - created`, com os dois
+`TIMESTAMP` convertidos para `DATE` antes da subtração: em Oracle a diferença entre dois
+`TIMESTAMP` é um `INTERVAL DAY TO SECOND`, que o `AVG` recusa com `ORA-00932`.
